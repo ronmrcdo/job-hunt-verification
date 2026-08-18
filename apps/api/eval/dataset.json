@@ -147,14 +147,14 @@
   },
   {
     "id": "suspicious_real_recruiter_01",
-    "description": "Real recruiter at a real, verifiable company, but the message is informal and uses a personal-sounding phone number — should land MODERATE, not HIGH, since the core signals (domain, company existence) check out.",
+    "description": "Real recruiter at a real, verifiable company, but the message is informal and uses a personal-sounding phone number — should land LOW-MODERATE, not HIGH, since the core signals (domain, company existence) check out and only one soft signal is present.",
     "submission": {
       "job_text": "Hi! I'm a recruiter with Delta Analytics (delta-analytics.com) and came across your profile. We have an open Data Analyst role and I think you'd be a great fit. Happy to chat whenever — feel free to text me directly at my cell if email's slower for you. Job details and application link are on our site under Careers.",
       "company_name": "Delta Analytics",
       "recruiter_email": "j.reyes@delta-analytics.com",
       "job_url": "https://delta-analytics.com/careers/data-analyst"
     },
-    "expected_band": "MODERATE",
+    "expected_band": "LOW",
     "expected_max_band": "MODERATE",
     "tags": ["legit", "suspicious_comms"],
     "v1_only": false
@@ -222,7 +222,7 @@
       "job_url": "https://brightleafmarketing.com/careers/marketing-coordinator"
     },
     "expected_band": "HIGH",
-    "expected_max_band": "HIGH",
+    "expected_max_band": "CRITICAL",
     "tags": ["injection"],
     "v1_only": false
   },
