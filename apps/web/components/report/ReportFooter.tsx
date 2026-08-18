@@ -45,7 +45,11 @@ export function ReportFooter({ vm, onReport, reported, iso }: ReportFooterProps)
   };
 
   return (
-    <footer className="border-t border-ink p-6">
+    // Aligned flush with the report column above it — a top rule + top padding
+    // only, no horizontal padding that would indent it out of line with the
+    // summary/findings (Investigator Prototype.dc.html line 403: border-top
+    // #E8E8E5, padding-top 18px).
+    <footer className="border-t border-rule-soft pt-[18px]">
       <div className="flex flex-wrap items-center justify-between gap-4">
         {hasReported ? (
           <span className="text-[12px] text-muted">Thanks — we&apos;ll look at it</span>

@@ -12,7 +12,7 @@ const ITEMS: { label: string; description: string }[] = [
 
 export function EvidenceRail() {
   return (
-    <aside className="flex flex-1 basis-[320px] flex-col gap-4 border border-ink p-[22px]">
+    <aside className="flex flex-[0_1_320px] flex-col gap-4 border border-ink p-[22px]">
       <MicroLabel>EVIDENCE COLLECTED</MicroLabel>
       <div className="flex flex-col">
         {ITEMS.map((item) => (

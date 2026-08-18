@@ -25,7 +25,7 @@ const ITEMS: RailItem[] = [
 
 export function FieldValueRail() {
   return (
-    <aside className="flex flex-1 basis-[320px] flex-col gap-4 border border-ink p-[22px]">
+    <aside className="flex flex-[0_1_320px] flex-col gap-4 border border-ink p-[22px]">
       <MicroLabel>WHAT EACH FIELD BUYS YOU</MicroLabel>
       <div className="flex flex-col">
         {ITEMS.map((item) => (

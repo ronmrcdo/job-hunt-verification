@@ -40,7 +40,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (error) {
     return (
-      <main id="main-content" className="mx-auto max-w-[1240px] px-6 py-16">
+      <main id="main-content" className="mx-auto max-w-page px-6 py-16">
         <MicroLabel>NOT FOUND</MicroLabel>
         <p className="mt-2 font-mono text-[13px]">We couldn&apos;t find that report.</p>
       </main>
@@ -49,7 +49,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
 
   if (!inv) {
     return (
-      <main id="main-content" className="mx-auto max-w-[1240px] px-6 py-16">
+      <main id="main-content" className="mx-auto max-w-page px-6 py-16">
         <MicroLabel>LOADING</MicroLabel>
         <p className="mt-2 font-mono text-[13px]">Loading…</p>
       </main>
@@ -61,7 +61,7 @@ export default function Page({ params }: { params: Promise<{ id: string }> }) {
   return (
     <main id="main-content">
       <BandBanner vm={vm} confidenceSlot={<ConfidencePanel vm={vm} />} />
-      <div className="mx-auto max-w-[1240px] grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-[1fr_320px]">
+      <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-[1fr_320px]">
         <div className="flex flex-col gap-10">
           <Summary summary={vm.summary} />
           {vm.groups.map((group) => (

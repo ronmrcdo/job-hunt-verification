@@ -14,10 +14,14 @@ import { getOwnerKey } from "../../../lib/ownerKey";
 import { useFlow } from "../../../lib/flow-context";
 import { detectInput } from "../../../lib/detect";
 import { useMotion } from "../../../lib/motion";
+import { SiteHeader } from "../../../components/site/SiteHeader";
 import { MicroLabel } from "../../../components/ui/MicroLabel";
 import { StepList } from "../../../components/progress/StepList";
 import { EvidenceRail } from "../../../components/progress/EvidenceRail";
-import { STEPS, COMPLETION_ORDER } from "../../../components/progress/progress-script";
+import {
+  STEPS,
+  COMPLETION_ORDER,
+} from "../../../components/progress/progress-script";
 
 function makeCaseId(): string {
   const raw = crypto.randomUUID().replace(/-/g, "").toUpperCase();
@@ -57,7 +61,8 @@ export default function Page() {
       jobText: state.jobInput,
       companyName: state.company || undefined,
       recruiterEmail: state.email || undefined,
-      jobUrl: detectInput(state.jobInput) === "link" ? state.jobInput : undefined,
+      jobUrl:
+        detectInput(state.jobInput) === "link" ? state.jobInput : undefined,
     };
 
     createInvestigation(input, getOwnerKey())
@@ -123,54 +128,61 @@ export default function Page() {
   };
 
   return (
-    <main id="main-content" className="mx-auto flex max-w-[1240px] flex-col gap-8 px-8 py-11">
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        variants={screenEnterVariants}
-        transition={screenEnter}
-        className="flex flex-col gap-3"
-      >
-        {/* aria-live: the only user-facing text that actually tracks
-            progress as steps close — announces the count to AT as it
-            updates, since there's no spinner/percentage for it to key off
-            of otherwise. */}
-        <MicroLabel aria-live="polite">
-          CASE {caseId} · {doneSteps.length} of 7 steps closed
-        </MicroLabel>
-        <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em]">
-          WORKING THROUGH
-          <br />
-          THE POSTING
-        </h1>
-        <p className="max-w-[600px] text-[16px] leading-[1.6] text-secondary">
-          {/* jobTitle isn't a flow field yet (see lib/flow-context.tsx) — "the
-              posting" stands in for it, same as elsewhere in V0. */}
-          {state.company || "The company"} · the posting. Steps close as their evidence comes in,
-          not in order.
-        </p>
-      </motion.div>
+    <>
+      <SiteHeader />
+      <main id="main-content" className="mx-auto max-w-page px-8 py-11">
+        {/* Two-column row: title, step list, and leave-page footer share the
+          left column so the evidence rail top-aligns with the title, not the
+          first step (design handoff progress screen). */}
+        <div className="flex flex-wrap items-start gap-8">
+          <div className="flex flex-1 basis-[560px] flex-col gap-6">
+            <motion.div
+              initial="hidden"
+              animate="visible"
+              variants={screenEnterVariants}
+              transition={screenEnter}
+              className="flex flex-col gap-3"
+            >
+              {/* aria-live: the only user-facing text that actually tracks
+                progress as steps close — announces the count to AT as it
+                updates, since there's no spinner/percentage for it to key off
+                of otherwise. */}
+              <MicroLabel aria-live="polite">
+                CASE {caseId} · {doneSteps.length} of 7 steps closed
+              </MicroLabel>
+              <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em]">
+                WORKING THROUGH
+                <br />
+                THE POSTING
+              </h1>
+              <p className="max-w-[600px] text-[16px] leading-[1.6] text-secondary">
+                {/* jobTitle isn't a flow field yet (see lib/flow-context.tsx) — "the
+                  posting" stands in for it, same as elsewhere in V0. */}
+                {state.company || "The company"} · the posting. Steps close as
+                their evidence comes in, not in order.
+              </p>
+            </motion.div>
 
-      <div className="flex flex-wrap items-start gap-8">
-        <div className="min-w-[420px] flex-[2_1_600px]">
-          <StepList doneSteps={doneSteps} />
+            <StepList doneSteps={doneSteps} />
+
+            <div className="flex flex-wrap items-center justify-between gap-4 border-t border-rule pt-4">
+              <p className="text-[14px] text-muted">
+                You can leave this page — the case stays open on your account
+                and we&apos;ll hold the report.
+              </p>
+              <button
+                type="button"
+                onClick={skipTheWait}
+                className="rounded-none border border-rule bg-page px-[15px] py-3 text-[11px] uppercase tracking-[0.1em] text-secondary hover:border-ink hover:text-body"
+              >
+                Skip the wait
+              </button>
+            </div>
+          </div>
+
+          <EvidenceRail />
         </div>
-        <EvidenceRail />
-      </div>
-
-      <div className="flex items-center justify-between border-t border-rule pt-4">
-        <p className="text-[14px] text-muted">
-          You can leave this page — the case stays open on your account and we&apos;ll hold the
-          report.
-        </p>
-        <button
-          type="button"
-          onClick={skipTheWait}
-          className="rounded-none border border-rule bg-page px-[15px] py-3 text-[11px] uppercase tracking-[0.1em] text-secondary hover:border-ink hover:text-body"
-        >
-          Skip the wait
-        </button>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }

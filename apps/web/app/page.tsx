@@ -73,15 +73,20 @@ export default function Page() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" className="mx-auto max-w-[1240px] px-8">
+      {/* Full-width main: each section owns its own centered max-w-page
+          container and vertical padding, so tinted sections (FourBands) bleed edge to
+          edge while their content stays on the page column, and there is real
+          breathing room between sections (Investigator Prototype.dc.html —
+          every <section>'s inner div carries `padding: 48px 32px …`). */}
+      <main id="main-content" className="flex flex-col">
         {/* Two-column hero per the prototype (Investigator Prototype.dc.html
             lines 49-80): a 560px-basis left column (eyebrow/H1/copy/field)
             beside a 340px-basis right column — the "This week" <aside>,
             animated as the hero's 5th staggered child at the 360ms delay
             (animation-delay: 360ms in the prototype's `rise` keyframe on
             that <aside>). Stacks to one column on mobile. */}
-        <motion.div
-          className="flex flex-wrap gap-x-12 gap-y-16 py-16"
+        <motion.section
+          className="mx-auto flex w-full max-w-page flex-wrap gap-x-12 gap-y-16 px-8 pb-[60px] pt-16"
           variants={motionPreset.staggerParent}
           initial="hidden"
           animate="visible"
@@ -158,7 +163,7 @@ export default function Page() {
           >
             <ThisWeekRail />
           </motion.div>
-        </motion.div>
+        </motion.section>
 
         <HowItRuns />
         <FourBands />

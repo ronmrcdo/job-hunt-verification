@@ -14,7 +14,11 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  md: "",
+  // Compact button — the nav "Check a job" and inline "skip" actions.
+  // Matches the prototype's header CTA: 11px bold uppercase, 13/17 padding
+  // (Investigator Prototype.dc.html line 41). Without real padding a primary
+  // button reads as bare text, not a button.
+  md: "text-[11px] font-bold tracking-[0.1em] px-[17px] py-[13px] uppercase",
   wide: "text-[14px] font-bold tracking-[0.1em] px-[19px] py-[15px] uppercase",
 };
 

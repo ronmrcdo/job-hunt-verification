@@ -27,7 +27,7 @@ export interface BandBannerProps {
 export function BandBanner({ vm, confidenceSlot }: BandBannerProps) {
   return (
     <section className="bg-ink text-page">
-      <div className="mx-auto max-w-[1240px] grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-2">
+      <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-2">
         <div className="max-[430px]:order-2">
           <MicroLabel tone="var(--color-page)">
             {`BAND ${vm.bandIndex} OF 4 · CASE ${vm.caseId}`}
