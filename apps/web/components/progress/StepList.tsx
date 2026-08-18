@@ -24,7 +24,10 @@ export function StepList({ steps = STEPS, doneSteps, caseId }: StepListProps) {
   return (
     <div>
       {caseId && (
-        <div className="pb-3 font-mono text-[12px] uppercase tracking-[0.1em] text-muted">
+        <div
+          aria-live="polite"
+          className="pb-3 font-mono text-[12px] uppercase tracking-[0.1em] text-muted"
+        >
           CASE {caseId} · {done.size} of 7 steps closed
         </div>
       )}

@@ -14,7 +14,7 @@ export default function Page() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto flex max-w-[1240px] flex-col gap-6 px-8 py-11">
+      <main id="main-content" className="mx-auto flex max-w-[1240px] flex-col gap-6 px-8 py-11">
         <div className="flex flex-col gap-3">
           <MicroLabel>STEP 3 OF 3 · SIGNED IN AS {state.authEmail}</MicroLabel>
           <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em]">

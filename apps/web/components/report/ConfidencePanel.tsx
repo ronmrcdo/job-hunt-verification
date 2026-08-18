@@ -19,7 +19,9 @@ export function ConfidencePanel({ vm }: ConfidencePanelProps) {
     <div>
       <div className="flex items-center gap-2">
         <MicroLabel tone="var(--color-page)">CONFIDENCE</MicroLabel>
-        <Tooltip label="Confidence explanation">{CONFIDENCE_EXPLANATION}</Tooltip>
+        <Tooltip label="Confidence explanation" tone="var(--color-page)">
+          {CONFIDENCE_EXPLANATION}
+        </Tooltip>
       </div>
       <div className="mt-2 text-[34px] uppercase leading-none">{vm.confidence.toUpperCase()}</div>
       <div className="mt-4 max-w-[16rem]">

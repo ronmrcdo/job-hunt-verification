@@ -23,7 +23,10 @@ export default function Page() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto grid max-w-[1240px] grid-cols-1 gap-10 px-8 py-16 md:grid-cols-[1fr_420px]">
+      <main
+        id="main-content"
+        className="mx-auto grid max-w-[1240px] grid-cols-1 gap-10 px-8 py-16 md:grid-cols-[1fr_420px]"
+      >
         <div className="flex flex-col gap-6">
           <MicroLabel>STEP 2 OF 3 · SIGN IN REQUIRED</MicroLabel>
           <h1 className="m-0 text-[48px] font-bold leading-[0.98] tracking-[-0.03em]">

@@ -7,7 +7,7 @@ export interface FetchErrorPanelProps {
 
 export function FetchErrorPanel({ onPasteInstead }: FetchErrorPanelProps) {
   return (
-    <div className="mt-3 rounded-none border border-warn-rule bg-warn-tint p-3">
+    <div role="alert" className="mt-3 rounded-none border border-warn-rule bg-warn-tint p-3">
       <MicroLabel>FETCH FAILED</MicroLabel>
       <p className="mt-1 text-[13px] leading-[1.5]">
         We couldn&apos;t read that page — it may need a login.

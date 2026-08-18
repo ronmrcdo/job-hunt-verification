@@ -123,7 +123,7 @@ export default function Page() {
   };
 
   return (
-    <main className="mx-auto flex max-w-[1240px] flex-col gap-8 px-8 py-11">
+    <main id="main-content" className="mx-auto flex max-w-[1240px] flex-col gap-8 px-8 py-11">
       <motion.div
         initial="hidden"
         animate="visible"
@@ -131,7 +131,11 @@ export default function Page() {
         transition={screenEnter}
         className="flex flex-col gap-3"
       >
-        <MicroLabel>
+        {/* aria-live: the only user-facing text that actually tracks
+            progress as steps close — announces the count to AT as it
+            updates, since there's no spinner/percentage for it to key off
+            of otherwise. */}
+        <MicroLabel aria-live="polite">
           CASE {caseId} · {doneSteps.length} of 7 steps closed
         </MicroLabel>
         <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em]">

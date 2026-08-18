@@ -39,7 +39,7 @@ export function HowItRuns() {
       <div className="flex flex-wrap gap-[28px]">
         {STEPS.map((step) => (
           <div key={step.number} className="flex flex-1 flex-col gap-[9px]" style={{ flexBasis: "230px" }}>
-            <div className="font-mono text-[12px] text-faint">{step.number}</div>
+            <div className="font-mono text-[12px] text-muted">{step.number}</div>
             <div className="text-[18px] font-bold tracking-[-0.015em]">{step.title}</div>
             <div className="text-[14px] leading-[1.6] text-secondary">{step.description}</div>
           </div>

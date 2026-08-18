@@ -27,13 +27,6 @@ export function VerifyChecklist({ items }: VerifyChecklistProps) {
     setChecked((prev) => ({ ...prev, [index]: !prev[index] }));
   };
 
-  const handleKeyDown = (index: number) => (event: React.KeyboardEvent) => {
-    if (event.key === " " || event.key === "Enter") {
-      event.preventDefault();
-      toggle(index);
-    }
-  };
-
   return (
     <section className="rounded-none border border-ink">
       <div className="flex items-center justify-between p-6 pb-0">
@@ -55,8 +48,12 @@ export function VerifyChecklist({ items }: VerifyChecklistProps) {
               type="button"
               role="checkbox"
               aria-checked={isChecked}
+              // Space/Enter activation comes from the native <button>'s own
+              // onClick (ruling R12) — no keydown handler needed, and adding
+              // one that also toggles on Space would double-toggle in a real
+              // browser (keydown toggles once, then the native keyup click
+              // toggles it back).
               onClick={() => toggle(index)}
-              onKeyDown={handleKeyDown(index)}
               className="flex items-start gap-3 rounded-none text-left max-[430px]:min-h-[44px] max-[430px]:items-center"
             >
               <span

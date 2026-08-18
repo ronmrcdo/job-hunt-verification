@@ -45,13 +45,21 @@ describe("VerifyChecklist", () => {
     expect(first.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("is keyboard-tickable: pressing Space toggles the checkbox", () => {
+  it("is keyboard-tickable: a real <button> gets Space/Enter activation from the platform for free (ruling R12)", () => {
+    // A manual keydown-Space handler here would double-toggle in a real
+    // browser — the native button already fires a click on Space's keyup,
+    // so toggling again on keydown cancels itself out. jsdom's fireEvent
+    // can't simulate that native activation path, so the real contract this
+    // asserts is: it's a genuine <button> (which is what guarantees
+    // platform Enter/Space activation), and click — what that activation
+    // produces — toggles aria-checked.
     const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
     render(<VerifyChecklist items={vm.verifyChecklist} />);
 
     const first = screen.getAllByRole("checkbox")[0];
+    expect(first.tagName).toBe("BUTTON");
     first.focus();
-    fireEvent.keyDown(first, { key: " ", code: "Space" });
+    fireEvent.click(first);
 
     expect(first.getAttribute("aria-checked")).toBe("true");
   });

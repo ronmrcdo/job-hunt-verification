@@ -73,7 +73,7 @@ export default function Page() {
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-[1240px] px-8">
+      <main id="main-content" className="mx-auto max-w-[1240px] px-8">
         <motion.div
           className="flex flex-col gap-[26px] py-16"
           variants={motionPreset.staggerParent}

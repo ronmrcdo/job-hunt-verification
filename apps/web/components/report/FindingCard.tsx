@@ -94,7 +94,11 @@ export function FindingCard({ finding }: FindingCardProps) {
         <button
           type="button"
           aria-expanded={open}
-          aria-controls={expandId}
+          // Only reference the expanded region's id while it's mounted —
+          // AnimatePresence unmounts it on collapse, so aria-controls would
+          // otherwise point at a nonexistent element.
+          aria-controls={open ? expandId : undefined}
+          aria-label={open ? "Collapse details" : "Expand details"}
           onClick={() => setOpen((current) => !current)}
           className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-none border border-ink text-[14px] leading-none max-[430px]:h-11 max-[430px]:w-11"
         >

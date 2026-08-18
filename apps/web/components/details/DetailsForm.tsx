@@ -47,6 +47,7 @@ export function DetailsForm() {
             onChange={(company) => set({ company })}
             placeholder="Acme Global"
             minWidth="240px"
+            autoComplete="organization"
           />
           <TextField
             label="Company website"
@@ -73,6 +74,7 @@ export function DetailsForm() {
             placeholder="acmeglobalcareers@gmail.com"
             mono
             minWidth="240px"
+            autoComplete="email"
           />
         </div>
 

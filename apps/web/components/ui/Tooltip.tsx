@@ -7,6 +7,11 @@ import { useMotion } from "../../lib/motion";
 export interface TooltipProps {
   label: string;
   children: ReactNode;
+  // Mirrors MicroLabel's tone prop: lets a caller on a dark background (e.g.
+  // ConfidencePanel on BandBanner's ink band) pass a light border/glyph
+  // color so the trigger stays visible (WCAG 1.4.11 non-text contrast).
+  // Defaults to the ink border used everywhere else.
+  tone?: string;
 }
 
 /**
@@ -14,7 +19,7 @@ export interface TooltipProps {
  * Closes on Escape or when focus leaves the widget entirely (blur to
  * outside the trigger/panel).
  */
-export function Tooltip({ label, children }: TooltipProps) {
+export function Tooltip({ label, children, tone }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   // useMotion() zeroes preset durations under reduced motion; reuse that
@@ -29,21 +34,19 @@ export function Tooltip({ label, children }: TooltipProps) {
     }
   }
 
+  // Escape is the only key this handler needs: Enter/Space are already
+  // handled by the native <button>'s own onClick activation (ruling R12 —
+  // a native button fires its activation click on keyup for Space and on
+  // keydown for Enter with zero JS; a manual keydown-Space toggle here
+  // would double-toggle in a real browser back to a no-op, since
+  // preventDefault() on keydown only suppresses the page-scroll, not the
+  // native keyup click). jsdom's fireEvent can't exercise that native
+  // activation path, so it isn't asserted via keydown simulation in tests —
+  // instead the tests assert this is a real <button>, which is what
+  // guarantees the platform gives us Enter/Space activation for free.
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Escape") {
       setOpen(false);
-      return;
-    }
-    // Explicit Enter/Space handling (matches VerifyChecklist's pattern):
-    // real browsers already activate a native <button> on these keys, but
-    // that activation-on-keydown/keyup behavior is a user-agent default
-    // action, not a DOM event dispatch — it isn't reproducible in jsdom via
-    // fireEvent, so we handle it ourselves for reliability and testability.
-    // preventDefault suppresses the browser's own click-on-activation so
-    // toggling here doesn't double-fire in a real browser.
-    if (event.key === " " || event.key === "Enter") {
-      event.preventDefault();
-      setOpen((current) => !current);
     }
   }
 
@@ -52,12 +55,21 @@ export function Tooltip({ label, children }: TooltipProps) {
       <button
         type="button"
         aria-expanded={open}
-        aria-controls={panelId}
+        // Only reference the panel's id while it's actually mounted —
+        // AnimatePresence unmounts it on close, so pointing aria-controls
+        // at a closed panel's id would target a nonexistent element.
+        aria-controls={open ? panelId : undefined}
         aria-label={label}
         onClick={() => setOpen((current) => !current)}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        className="rounded-none border border-ink w-5 h-5 text-[10px] leading-none inline-flex items-center justify-center max-[430px]:h-11 max-[430px]:w-11"
+        className={[
+          "rounded-none border w-5 h-5 text-[10px] leading-none inline-flex items-center justify-center max-[430px]:h-11 max-[430px]:w-11",
+          tone ? "" : "border-ink",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={tone ? { borderColor: tone, color: tone } : undefined}
       >
         ?
       </button>

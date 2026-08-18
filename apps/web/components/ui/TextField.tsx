@@ -11,6 +11,7 @@ export interface TextFieldProps {
   type?: InputHTMLAttributes<HTMLInputElement>["type"];
   rightSlot?: ReactNode;
   minWidth?: string;
+  autoComplete?: string;
 }
 
 export function TextField({
@@ -22,6 +23,7 @@ export function TextField({
   type = "text",
   rightSlot,
   minWidth,
+  autoComplete,
 }: TextFieldProps) {
   const id = useId();
 
@@ -41,6 +43,7 @@ export function TextField({
         type={type}
         value={value}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         onChange={(event) => onChange(event.target.value)}
         className={[
           "w-full border border-ink rounded-none p-[13px]",

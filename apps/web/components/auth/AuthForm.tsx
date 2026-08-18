@@ -62,17 +62,24 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
         </button>
       </div>
 
-      <TextField label="Email" value={email} onChange={setEmail} placeholder="you@example.com" />
+      <TextField
+        label="Email"
+        value={email}
+        onChange={setEmail}
+        placeholder="you@example.com"
+        autoComplete="email"
+      />
       <TextField
         label="Password"
         value={password}
         onChange={setPassword}
         type="password"
         placeholder="At least 8 characters"
+        autoComplete={mode === "signin" ? "current-password" : "new-password"}
       />
 
       {showInvalid ? (
-        <div className="rounded-none border border-warn-rule bg-warn-tint p-3">
+        <div role="alert" className="rounded-none border border-warn-rule bg-warn-tint p-3">
           <p className="text-[13px] leading-[1.5]">
             Enter an email and a password of at least 8 characters to continue.
           </p>
