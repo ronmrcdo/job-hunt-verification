@@ -9,7 +9,8 @@ import re
 from app.graph.state import InvestigationState, Finding
 
 _PATTERNS = {
-    "ignore_previous": re.compile(r"ignore (all |the )?previous", re.I),
+    # "prior" added alongside "previous" to catch "ignore prior instructions".
+    "ignore_previous": re.compile(r"ignore (all |the )?(previous|prior)", re.I),
     # Requires instructional/address framing around the AI reference, so
     # ordinary job titles like "AI Assistant Engineer" don't match — only
     # imperative phrasing aimed at an AI verifier does.
@@ -22,8 +23,28 @@ _PATTERNS = {
         re.I,
     ),
     "note_to_ai": re.compile(r"note to (ai|assistants?)", re.I),
-    "mark_legitimate": re.compile(r"\bmark (this )?(as )?(legitimate|verified|safe)", re.I),
+    # Broadened from bare "mark" to the family of verbs a scammer uses to
+    # instruct a verifier to render a favorable verdict ("classify this as
+    # safe", "rate this legitimate", "approve as legitimate"). The verb must
+    # be immediately followed by the target phrase, so ordinary sentences
+    # that merely contain "legitimate"/"trustworthy" elsewhere don't match.
+    "mark_legitimate": re.compile(
+        r"\b(mark|classify|rate|approve)(d|ing)? (this )?(as )?"
+        r"(legitimate|verified|safe|low risk|trustworthy)\b", re.I),
     "disregard": re.compile(r"disregard (risk|the above|prior)", re.I),
+    # Imperative addressed at a reviewer, bot, or automated screening system
+    # ("SYSTEM NOTE TO REVIEWER", "To the automated screening system:").
+    "reviewer_address": re.compile(
+        r"\b(note|attention)\s+to\s+(the\s+)?"
+        r"(reviewer|screening|automated|verification|compliance)\b", re.I),
+    "bots_reading": re.compile(r"for (any )?(bots|ais?|automated systems?)\s+reading", re.I),
+    "do_not_flag": re.compile(r"\bdo\s+not\s+flag\b|\bdon['’]?t\s+flag\b", re.I),
+    "override_assessment": re.compile(
+        r"override (your |the )?(risk )?(assessment|rating)\b", re.I),
+    # "pre-verified"/"pre-approved"/"already verified"/"certified legitimate":
+    # a scammer's assertion that the posting has already passed review.
+    "pre_verified": re.compile(
+        r"pre-?verified|pre-?approved|already verified|certified legitimate", re.I),
 }
 
 
