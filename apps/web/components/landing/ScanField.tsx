@@ -3,8 +3,7 @@
 import { TextArea } from "../ui/TextArea";
 import { PriorCheckNotice } from "./PriorCheckNotice";
 import { FetchErrorPanel } from "./FetchErrorPanel";
-
-export type DetectionState = "empty" | "link" | "text";
+import type { DetectionState } from "../../lib/detect";
 
 export interface ScanFieldProps {
   value: string;
