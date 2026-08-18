@@ -45,7 +45,7 @@ export function Tooltip({ label, children }: TooltipProps) {
         onClick={() => setOpen((current) => !current)}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        className="rounded-none border border-ink w-5 h-5 text-[10px] leading-none inline-flex items-center justify-center"
+        className="rounded-none border border-ink w-5 h-5 text-[10px] leading-none inline-flex items-center justify-center max-[430px]:h-11 max-[430px]:w-11"
       >
         ?
       </button>

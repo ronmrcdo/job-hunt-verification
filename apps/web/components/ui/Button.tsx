@@ -26,7 +26,9 @@ export function Button({
   ...props
 }: ButtonProps) {
   const classes = [
-    "rounded-none active:scale-[0.98] transition-transform",
+    "rounded-none active:scale-[0.98] transition-transform max-[430px]:min-h-[44px]",
+    // Primary buttons go full-width on mobile per README §6 mobile spec.
+    variant === "primary" ? "max-[430px]:w-full" : "",
     VARIANT_CLASSES[variant],
     SIZE_CLASSES[size],
     className,
@@ -34,5 +36,10 @@ export function Button({
     .filter(Boolean)
     .join(" ");
 
-  return <button type={type} className={classes} {...props} />;
+  // Stable hook for the CSS target + a lightweight structural contract
+  // that this affordance exists — mirrors the max-[430px]:w-full class
+  // above rather than driving layout itself.
+  const mobileProps = variant === "primary" ? { "data-fullwidth-mobile": true } : {};
+
+  return <button type={type} className={classes} {...mobileProps} {...props} />;
 }

@@ -57,11 +57,11 @@ export function VerifyChecklist({ items }: VerifyChecklistProps) {
               aria-checked={isChecked}
               onClick={() => toggle(index)}
               onKeyDown={handleKeyDown(index)}
-              className="flex items-start gap-3 rounded-none text-left"
+              className="flex items-start gap-3 rounded-none text-left max-[430px]:min-h-[44px] max-[430px]:items-center"
             >
               <span
                 aria-hidden="true"
-                className="mt-0.5 flex h-[19px] w-[19px] shrink-0 items-center justify-center border border-ink"
+                className="mt-0.5 flex h-[19px] w-[19px] shrink-0 items-center justify-center border border-ink max-[430px]:mt-0 max-[430px]:h-11 max-[430px]:w-11"
                 style={isChecked ? { background: "var(--color-ink)" } : undefined}
               >
                 {isChecked ? <span className="text-[12px] text-page">✓</span> : null}

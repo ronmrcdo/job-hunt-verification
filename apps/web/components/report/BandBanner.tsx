@@ -28,7 +28,7 @@ export function BandBanner({ vm, confidenceSlot }: BandBannerProps) {
   return (
     <section className="bg-ink text-page">
       <div className="mx-auto max-w-[1240px] grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-2">
-        <div>
+        <div className="max-[430px]:order-2">
           <MicroLabel tone="var(--color-page)">
             {`BAND ${vm.bandIndex} OF 4 · CASE ${vm.caseId}`}
           </MicroLabel>
@@ -47,7 +47,9 @@ export function BandBanner({ vm, confidenceSlot }: BandBannerProps) {
           <hr className="my-6 max-w-[36rem] border-t border-ink-muted" />
           <MicroLabel tone="var(--color-page)">{vm.repeatLine}</MicroLabel>
         </div>
-        <div>{confidenceSlot}</div>
+        <div data-mobile-order="above" className="max-[430px]:order-1 max-[430px]:text-right">
+          {confidenceSlot}
+        </div>
       </div>
     </section>
   );

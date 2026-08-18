@@ -91,7 +91,7 @@ export default function Page() {
           <motion.h1
             variants={motionPreset.screenEnterVariants}
             transition={{ ...motionPreset.screenEnter, delay: 0.11 }}
-            className="m-0 text-[72px] font-bold leading-[0.94] tracking-[-0.045em]"
+            className="m-0 text-[72px] font-bold leading-[0.94] tracking-[-0.045em] max-[430px]:text-[30px]"
           >
             CHECK A JOB
             <br />

@@ -63,8 +63,10 @@ export function FindingCard({ finding }: FindingCardProps) {
       className="rounded-none hover:bg-surface-soft"
       style={{ background: row.background }}
     >
-      <div className="grid grid-cols-[54px_6px_1fr_26px] items-start gap-3 py-3">
-        <div className="pt-1 font-mono text-[12px]">{finding.recordId}</div>
+      <div className="grid grid-cols-[54px_6px_1fr_26px] items-start gap-3 py-3 max-[430px]:grid-cols-[6px_1fr_44px]">
+        <div data-mobile-hide-recordid className="pt-1 font-mono text-[12px] max-[430px]:hidden">
+          {finding.recordId}
+        </div>
         <div
           data-severity={marker.dataSeverity}
           className="h-5 w-[6px] rounded-none"
@@ -94,7 +96,7 @@ export function FindingCard({ finding }: FindingCardProps) {
           aria-expanded={open}
           aria-controls={expandId}
           onClick={() => setOpen((current) => !current)}
-          className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-none border border-ink text-[14px] leading-none"
+          className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-none border border-ink text-[14px] leading-none max-[430px]:h-11 max-[430px]:w-11"
         >
           {open ? "−" : "+"}
         </button>
@@ -110,7 +112,7 @@ export function FindingCard({ finding }: FindingCardProps) {
             variants={expandVariants}
             transition={expand}
             style={{ overflow: "hidden" }}
-            className="pl-[74px] pb-4"
+            className="pl-[74px] pb-4 max-[430px]:pl-[20px]"
           >
             <SourceList sources={finding.sources} />
             {finding.however && (
