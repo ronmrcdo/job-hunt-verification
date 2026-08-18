@@ -242,7 +242,9 @@ describe("product rules (rendered tree, Task 3.6): unverifiable markers are neut
     const rows = container.querySelectorAll('[data-row-tone="neutral"]');
     expect(rows.length).toBe(unverifiableFindingIds.size);
     for (const row of rows) {
-      expect((row as HTMLElement).style.background).toBe("var(--color-neutral-row)");
+      // Resting tint is applied via a Tailwind class (not inline style) so
+      // hover:bg-surface-soft can still win — see FindingCard's rowTone.
+      expect(row).toHaveClass("bg-neutral-row");
       expect(row.getAttribute("data-row-tone")).not.toBe("critical");
     }
   });

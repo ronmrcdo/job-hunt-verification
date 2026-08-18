@@ -74,84 +74,92 @@ export default function Page() {
     <>
       <SiteHeader />
       <main id="main-content" className="mx-auto max-w-[1240px] px-8">
+        {/* Two-column hero per the prototype (Investigator Prototype.dc.html
+            lines 49-80): a 560px-basis left column (eyebrow/H1/copy/field)
+            beside a 340px-basis right column — the "This week" <aside>,
+            animated as the hero's 5th staggered child at the 360ms delay
+            (animation-delay: 360ms in the prototype's `rise` keyframe on
+            that <aside>). Stacks to one column on mobile. */}
         <motion.div
-          className="flex flex-col gap-[26px] py-16"
+          className="flex flex-wrap gap-x-12 gap-y-16 py-16"
           variants={motionPreset.staggerParent}
           initial="hidden"
           animate="visible"
         >
-          <motion.div
-            variants={motionPreset.screenEnterVariants}
-            transition={{ ...motionPreset.screenEnter, delay: 0.04 }}
-            className="text-[11px] uppercase tracking-[0.18em] text-muted"
-          >
-            Evidence-backed · no scam verdicts · no scores
-          </motion.div>
+          <div className="flex flex-[1_1_560px] flex-col gap-[26px]">
+            <motion.div
+              variants={motionPreset.screenEnterVariants}
+              transition={motionPreset.screenEnterAt(0.04)}
+              className="text-[11px] uppercase tracking-[0.18em] text-muted"
+            >
+              Evidence-backed · no scam verdicts · no scores
+            </motion.div>
 
-          <motion.h1
-            variants={motionPreset.screenEnterVariants}
-            transition={{ ...motionPreset.screenEnter, delay: 0.11 }}
-            className="m-0 text-[72px] font-bold leading-[0.94] tracking-[-0.045em] max-[430px]:text-[30px]"
-          >
-            CHECK A JOB
-            <br />
-            BEFORE YOU
-            <br />
-            ANSWER
-          </motion.h1>
+            <motion.h1
+              variants={motionPreset.screenEnterVariants}
+              transition={motionPreset.screenEnterAt(0.11)}
+              className="m-0 text-[72px] font-bold leading-[0.94] tracking-[-0.045em] max-[430px]:text-[30px]"
+            >
+              CHECK A JOB
+              <br />
+              BEFORE YOU
+              <br />
+              ANSWER
+            </motion.h1>
 
-          <motion.p
-            variants={motionPreset.screenEnterVariants}
-            transition={{ ...motionPreset.screenEnter, delay: 0.19 }}
-            className="m-0 max-w-[560px] text-[19px] leading-[1.55] text-secondary"
-          >
-            Paste the link or the message a recruiter sent you. We check what can be verified, say plainly
-            what we couldn&rsquo;t reach, and show the evidence behind every finding.
-          </motion.p>
+            <motion.p
+              variants={motionPreset.screenEnterVariants}
+              transition={motionPreset.screenEnterAt(0.19)}
+              className="m-0 max-w-[560px] text-[19px] leading-[1.55] text-secondary"
+            >
+              Paste the link or the message a recruiter sent you. We check what can be verified, say plainly
+              what we couldn&rsquo;t reach, and show the evidence behind every finding.
+            </motion.p>
 
-          <motion.div
-            ref={fieldRef}
-            variants={motionPreset.screenEnterVariants}
-            transition={{ ...motionPreset.screenEnter, delay: 0.27 }}
-            className="flex max-w-[620px] flex-col gap-2"
-          >
-            <ScanField
-              value={value}
-              onChange={setValue}
-              detection={detection}
-              prior={value.includes(PRIOR_CHECK_DOMAIN)}
-              fetchError={state.fetchError}
-              onPasteInstead={onPasteInstead}
-            />
-          </motion.div>
-
-          <motion.div
-            variants={motionPreset.screenEnterVariants}
-            transition={{ ...motionPreset.screenEnter, delay: 0.36 }}
-            className="flex max-w-[620px] flex-col gap-2"
-          >
-            <div className="flex flex-wrap gap-[10px] pt-1">
-              <div className="flex flex-1 items-stretch border border-ink" style={{ flexBasis: "300px" }}>
-                <Button variant="primary" size="wide" className="flex-1" onClick={onStart}>
-                  START INVESTIGATION
-                </Button>
-                <div className="flex items-center whitespace-nowrap px-4 text-[11px] uppercase tracking-[0.08em] text-muted">
-                  1–2 MIN
+            <motion.div
+              ref={fieldRef}
+              variants={motionPreset.screenEnterVariants}
+              transition={motionPreset.screenEnterAt(0.27)}
+              className="flex max-w-[620px] flex-col gap-2"
+            >
+              <ScanField
+                value={value}
+                onChange={setValue}
+                detection={detection}
+                prior={value.includes(PRIOR_CHECK_DOMAIN)}
+                fetchError={state.fetchError}
+                onPasteInstead={onPasteInstead}
+              />
+              <div className="flex flex-wrap gap-[10px] pt-1">
+                <div className="flex flex-1 items-stretch border border-ink" style={{ flexBasis: "300px" }}>
+                  <Button variant="primary" size="wide" className="flex-1" onClick={onStart}>
+                    START INVESTIGATION
+                  </Button>
+                  <div className="flex items-center whitespace-nowrap px-4 text-[11px] uppercase tracking-[0.08em] text-muted">
+                    1–2 MIN
+                  </div>
                 </div>
+                <Button variant="secondary" size="wide" onClick={onFillSample}>
+                  TRY THE SAMPLE CASE
+                </Button>
               </div>
-              <Button variant="secondary" size="wide" onClick={onFillSample}>
-                TRY THE SAMPLE CASE
-              </Button>
-            </div>
-            <div className="text-[13px] text-muted">
-              {state.signedIn
-                ? `Signed in as ${state.authEmail || "you@example.com"} — your report is saved to your account.`
-                : "You’ll be asked to sign in before the check runs, so the report stays private to you."}
-            </div>
+              <div className="text-[13px] text-muted">
+                {state.signedIn
+                  ? `Signed in as ${state.authEmail || "you@example.com"} — your report is saved to your account.`
+                  : "You’ll be asked to sign in before the check runs, so the report stays private to you."}
+              </div>
+            </motion.div>
+          </div>
+
+          <motion.div
+            variants={motionPreset.screenEnterVariants}
+            transition={motionPreset.screenEnterAt(0.36)}
+            className="flex-[0_1_340px]"
+          >
+            <ThisWeekRail />
           </motion.div>
         </motion.div>
 
-        <ThisWeekRail />
         <HowItRuns />
         <FourBands />
         <ClosingBlock onScan={onClosingScan} />

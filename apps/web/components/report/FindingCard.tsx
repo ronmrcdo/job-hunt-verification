@@ -36,15 +36,20 @@ function severityMarker(finding: FindingVM): SeverityMarker {
 
 interface RowTone {
   tone: "critical" | "neutral" | "default";
-  background: string | undefined;
+  // Resting background as a Tailwind class rather than an inline style —
+  // an inline `style.background` wins over `hover:bg-surface-soft`
+  // regardless of source order, which silently killed hover feedback on
+  // tinted rows. A class lets the cascade (hover variant ordered after
+  // the plain utility) decide instead.
+  backgroundClass: string;
 }
 
 // Product rule #6: unverifiable must read neutral, never like a warning —
 // light-grey row, not an alarm color.
 function rowTone(finding: FindingVM): RowTone {
-  if (finding.severity === "critical") return { tone: "critical", background: "var(--color-critical-tint)" };
-  if (finding.direction === "unverifiable") return { tone: "neutral", background: "var(--color-neutral-row)" };
-  return { tone: "default", background: undefined };
+  if (finding.severity === "critical") return { tone: "critical", backgroundClass: "bg-critical-tint" };
+  if (finding.direction === "unverifiable") return { tone: "neutral", backgroundClass: "bg-neutral-row" };
+  return { tone: "default", backgroundClass: "" };
 }
 
 export function FindingCard({ finding }: FindingCardProps) {
@@ -60,8 +65,7 @@ export function FindingCard({ finding }: FindingCardProps) {
   return (
     <div
       data-row-tone={row.tone}
-      className="rounded-none hover:bg-surface-soft"
-      style={{ background: row.background }}
+      className={["rounded-none hover:bg-surface-soft", row.backgroundClass].filter(Boolean).join(" ")}
     >
       <div className="grid grid-cols-[54px_6px_1fr_26px] items-start gap-3 py-3 max-[430px]:grid-cols-[6px_1fr_44px]">
         <div data-mobile-hide-recordid className="pt-1 font-mono text-[12px] max-[430px]:hidden">

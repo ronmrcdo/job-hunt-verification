@@ -22,11 +22,9 @@ export interface TooltipProps {
 export function Tooltip({ label, children, tone }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  // useMotion() zeroes preset durations under reduced motion; reuse that
-  // signal so this panel collapses to an instant show, otherwise use the
-  // fast easeOut this affordance needs.
-  const { fade } = useMotion();
-  const transition = fade.duration === 0 ? { duration: 0 } : { duration: 0.15, ease: "easeOut" as const };
+  // useMotion() zeroes the tooltip preset's duration under reduced motion,
+  // so this panel collapses to an instant show for free.
+  const { tooltip: transition } = useMotion();
 
   function handleBlur(event: FocusEvent<HTMLDivElement>) {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {

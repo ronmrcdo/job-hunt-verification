@@ -30,12 +30,16 @@ describe("FindingCard", () => {
     expect(screen.getByRole("button")).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("marks the critical finding's row tone as critical", () => {
+  it("marks the critical finding's row tone as critical, with the resting tint applied via a class (not inline style) so hover can still win", () => {
     const finding = findingsById().get("F-04")!;
     expect(finding.severity).toBe("critical");
     const { container } = render(<FindingCard finding={finding} />);
 
-    expect(container.querySelector('[data-row-tone="critical"]')).not.toBeNull();
+    const row = container.querySelector('[data-row-tone="critical"]');
+    expect(row).not.toBeNull();
+    expect(row).toHaveClass("bg-critical-tint");
+    expect(row).toHaveClass("hover:bg-surface-soft");
+    expect((row as HTMLElement).style.background).toBe("");
   });
 
   it("toggle click expands aria-expanded and reveals a source excerpt (R8: sync enter)", () => {
@@ -96,10 +100,12 @@ describe("FindingCard", () => {
     expect(String(weight)).toBe("700");
   });
 
-  it("marks the unverifiable finding's row tone as neutral, not a warning color", () => {
+  it("marks the unverifiable finding's row tone as neutral, not a warning color, with the resting tint applied via a class", () => {
     const finding = findingsById().get("F-06")!;
     const { container } = render(<FindingCard finding={finding} />);
-    expect(container.querySelector('[data-row-tone="neutral"]')).not.toBeNull();
+    const row = container.querySelector('[data-row-tone="neutral"]');
+    expect(row).not.toBeNull();
+    expect(row).toHaveClass("bg-neutral-row");
     expect(container.textContent).not.toContain("WARNING");
   });
 
