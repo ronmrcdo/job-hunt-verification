@@ -25,17 +25,31 @@ def _levenshtein(a: str, b: str) -> int:
     return prev[-1]
 
 
+def _is_lookalike(cand: str, ref: str) -> bool:
+    if cand == ref:
+        return False
+    # Common substitution: 'rn' visually reads as 'm'
+    if cand.replace("rn", "m") == ref or cand == ref.replace("m", "rn"):
+        return True
+    dist = _levenshtein(cand, ref)
+    return 1 <= dist <= 2 and abs(len(cand) - len(ref)) <= 2
+
+
 def homoglyph_hit(candidate: str, real: str | None) -> bool:
     if not real:
         return False
     cand, ref = _label(candidate), _label(real)
     if cand == ref:
         return False
-    # Punycode / IDN homoglyph domains
-    if candidate.lower().startswith("xn--") or "xn--" in candidate.lower():
-        return True
-    # Common substitution: 'rn' visually reads as 'm'
-    if cand.replace("rn", "m") == ref or cand == ref.replace("m", "rn"):
-        return True
-    dist = _levenshtein(cand, ref)
-    return 1 <= dist <= 2 and abs(len(cand) - len(ref)) <= 2
+    # Punycode / IDN candidate: decode to its Unicode form and run the same
+    # lookalike comparison against the real label, instead of blanket-flagging
+    # every xn-- domain (which false-positives on legitimate IDNs).
+    if "xn--" in cand:
+        try:
+            decoded = cand.encode("ascii").decode("idna")
+        except UnicodeError:
+            return True  # malformed punycode is not a legitimate domain
+        if decoded == ref:
+            return False
+        return _is_lookalike(decoded, ref)
+    return _is_lookalike(cand, ref)
