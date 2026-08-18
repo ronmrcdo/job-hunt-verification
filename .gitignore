@@ -4,5 +4,6 @@ node_modules/
 !.env.example
 __pycache__/
 .venv/
+.pytest_cache/
 dist/
 .next/
