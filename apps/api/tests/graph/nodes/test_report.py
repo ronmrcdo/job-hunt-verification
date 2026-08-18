@@ -107,6 +107,25 @@ async def test_report_defangs_mixed_case_scheme_in_llm_output(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_report_defangs_urls_in_finding_claims(monkeypatch):
+    # Devil's advocate finding #7: finding.claim URLs were never defanged
+    # before reaching the response.
+    async def fake_call(model, schema, messages, *, node):
+        return schema(summary="We found signals consistent with known scam patterns.",
+                      what_to_verify=["Verify the domain."]), \
+               NodeUsage(node=node, model="cheap", usd=0.001)
+    monkeypatch.setattr(report, "structured_call", fake_call)
+    state = _state(findings=[Finding(
+        id="f1", category="job", direction="suspicious", severity="low",
+        claim="Apply via https://EVIL.com/apply instead of the official site.",
+        source_ids=["src_001"], provenance="web_verified")])
+    out = await report.report_generation(state)
+    claim = out["findings"][0].claim
+    assert "https://EVIL.com" not in claim
+    assert "hxxps://EVIL[.]com" in claim
+
+
+@pytest.mark.asyncio
 async def test_report_flags_payment_check_for_critical_band(monkeypatch):
     async def fake_call(model, schema, messages, *, node):
         return schema(summary="We found several signals consistent with known scam patterns.",

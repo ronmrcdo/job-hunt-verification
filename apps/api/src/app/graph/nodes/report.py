@@ -13,19 +13,18 @@ Findings fed to the model are untrusted, attacker-influenced content (spec
 instruction not to follow anything embedded inside it.
 
 Defanging (spec §9.5): any URL the model echoes into its summary or checklist
-is defanged via `defang_url` as a post-processing safety net, so a report
+is defanged via `defang_text` as a post-processing safety net, so a report
 never hyperlinks the thing it is warning about even if the LLM includes a raw
-URL despite being told not to.
+URL despite being told not to. The same defanging is applied to
+`finding.claim` text -- findings are derived from attacker-influenced,
+fetched content (spec §9.2) and can carry a raw URL that must never reach the
+client as a clickable link.
 """
-import re
-
 from pydantic import BaseModel, Field
 
 from app.graph.state import InvestigationState
 from app.llm import cheap_model, structured_call
-from app.security.defang import defang_url
-
-_URL_RE = re.compile(r"https?://[^\s)\]}'\"<>]+", re.IGNORECASE)
+from app.security.defang import defang_text
 
 
 class _ReportLLM(BaseModel):
@@ -65,20 +64,6 @@ def _pack(state: InvestigationState) -> str:
     )
 
 
-def _defang_match(match: re.Match) -> str:
-    # defang_url does case-sensitive literal replaces: "https://"/"http://" on
-    # the scheme, and `parsed.hostname` (which urlparse always lowercases) on
-    # the host. A mixed/upper-case URL (e.g. "HTTPS://Evil.COM") would fail
-    # both of those literal matches and pass through undefanged, so lowercase
-    # the whole matched URL before handing it to defang_url — the defanged
-    # form is not meant to be clickable, so case fidelity doesn't matter here.
-    return defang_url(match.group(0).lower())
-
-
-def _defang_text(text: str) -> str:
-    return _URL_RE.sub(_defang_match, text)
-
-
 def _with_payment_check(checklist: list[str], band: str) -> list[str]:
     if band not in ("HIGH", "CRITICAL"):
         return checklist
@@ -98,10 +83,12 @@ async def report_generation(state: InvestigationState) -> dict:
     out, usage = await structured_call(cheap_model(), _ReportLLM, messages, node="report")
 
     band = state.assessment.band if state.assessment else "UNKNOWN"
-    summary = _defang_text(out.summary)
-    what_to_verify = [_defang_text(item) for item in out.what_to_verify]
+    summary = defang_text(out.summary)
+    what_to_verify = [defang_text(item) for item in out.what_to_verify]
     what_to_verify = _with_payment_check(what_to_verify, band)
+    findings = [f.model_copy(update={"claim": defang_text(f.claim)}) for f in state.findings]
 
     assessment = state.assessment.model_copy(update={"summary": summary})
     signals = {**state.deterministic_signals, "what_to_verify": what_to_verify}
-    return {"assessment": assessment, "deterministic_signals": signals, "cost_events": [usage]}
+    return {"assessment": assessment, "deterministic_signals": signals, "cost_events": [usage],
+            "findings": findings}
