@@ -139,13 +139,16 @@ export function FlowProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const submitted = useMemo<Submitted>(() => {
+    // contactChannel holds a messaging platform (e.g. "Telegram"), not the
+    // company-website URL stored in `site` — no flow field sources it yet,
+    // so (like jobTitle) it's left unmapped in V0 rather than populated
+    // with the wrong kind of value.
     const out: Submitted = {};
     if (state.company) out.company = state.company;
     if (state.recruiter) out.recruiter = state.recruiter;
     if (state.email) out.email = state.email;
-    if (state.site) out.contactChannel = state.site;
     return out;
-  }, [state.company, state.recruiter, state.email, state.site]);
+  }, [state.company, state.recruiter, state.email]);
 
   const value = useMemo<FlowContextValue>(
     () => ({ state, set, reset, submitted }),

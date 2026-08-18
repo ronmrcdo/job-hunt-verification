@@ -5,11 +5,19 @@ import { FlowProvider, useFlow } from "../flow-context";
 const STORAGE_KEY = "jhv_flow";
 
 function Probe() {
-  const { state, set, reset } = useFlow();
+  const { state, set, reset, submitted } = useFlow();
   return (
     <div>
       <div data-testid="jobInput">{state.jobInput}</div>
+      <div data-testid="submitted">{JSON.stringify(submitted)}</div>
       <button onClick={() => set({ jobInput: "x" })}>set</button>
+      <button
+        onClick={() =>
+          set({ company: "Acme", email: "a@b.com", recruiter: "Jane", site: "https://acme.com" })
+        }
+      >
+        setSubmittedFields
+      </button>
       <button onClick={() => reset()}>reset</button>
     </div>
   );
@@ -58,5 +66,20 @@ describe("FlowProvider / useFlow", () => {
     expect(parsed).not.toHaveProperty("authPass");
     expect(parsed).not.toHaveProperty("password");
     expect(Object.keys(parsed).some((k) => /pass/i.test(k))).toBe(false);
+  });
+
+  it("submitted maps company/recruiter/email but leaves contactChannel unmapped (site is a URL, not a channel)", () => {
+    renderProbe();
+    fireEvent.click(screen.getByText("setSubmittedFields"));
+
+    const submitted = JSON.parse(screen.getByTestId("submitted").textContent as string);
+
+    expect(submitted).toEqual({
+      company: "Acme",
+      email: "a@b.com",
+      recruiter: "Jane",
+    });
+    expect(submitted).not.toHaveProperty("contactChannel");
+    expect(submitted).not.toHaveProperty("jobTitle");
   });
 });
