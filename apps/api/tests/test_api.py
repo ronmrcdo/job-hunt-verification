@@ -53,6 +53,45 @@ async def test_create_and_fetch_investigation(monkeypatch):
         assert missing.status_code == 404
 
 
+async def test_post_rejects_empty_owner_key(monkeypatch):
+    monkeypatch.setattr(main, "run_investigation", _fake_run)
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        r = await ac.post("/investigations", json={"job_text": "Acme hiring"},
+                           headers={"X-Owner-Key": ""})
+        assert r.status_code == 422
+
+
+async def test_post_rejects_missing_owner_key():
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        r = await ac.post("/investigations", json={"job_text": "Acme hiring"})
+        assert r.status_code == 422
+
+
+async def test_get_rejects_empty_owner_key(monkeypatch):
+    # An empty owner key must never be treated as a valid (shared) owner —
+    # it can't be used to read a record created under a real key, and it
+    # can't be used to read a record that was (somehow) stored under an
+    # empty key either. 404, not 403, so existence is never leaked.
+    monkeypatch.setattr(main, "run_investigation", _fake_run)
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        r = await ac.post("/investigations", json={"job_text": "Acme hiring"},
+                           headers={"X-Owner-Key": "owner-empty-check"})
+        inv_id = r.json()["id"]
+
+        empty = await ac.get(f"/investigations/{inv_id}", headers={"X-Owner-Key": ""})
+        assert empty.status_code == 404
+
+
+async def test_get_rejects_missing_owner_key():
+    transport = ASGITransport(app=main.app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        r = await ac.get(f"/investigations/{uuid.uuid4()}")
+        assert r.status_code == 422
+
+
 async def test_sources_are_excerpt_only(monkeypatch):
     from app.graph.state import RawSubmission, Source
     from datetime import datetime, timezone

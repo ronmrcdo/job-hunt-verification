@@ -175,8 +175,19 @@ async def _run_with_deadline(submission: RawSubmission, inv_id: uuid.UUID) -> tu
         return InvestigationState(submission=submission), "deadline_exceeded"
 
 
+def _require_owner_key(x_owner_key: str) -> str:
+    # An empty/whitespace-only key is not a valid owner (spec §9.6) — treat
+    # it the same as a missing header, never as a valid (shared) owner that
+    # every unauthenticated caller would collide into.
+    key = x_owner_key.strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="X-Owner-Key header must not be empty")
+    return key
+
+
 @app.post("/investigations", response_model=CreateResponse, status_code=201)
 async def create(req: CreateRequest, x_owner_key: str = Header(...)) -> CreateResponse:
+    x_owner_key = _require_owner_key(x_owner_key)
     inv_id = uuid.uuid4()
     submission = RawSubmission(**req.model_dump())
 
@@ -213,7 +224,12 @@ async def create(req: CreateRequest, x_owner_key: str = Header(...)) -> CreateRe
 
 @app.get("/investigations/{inv_id}", response_model=InvestigationResponse)
 async def get(inv_id: uuid.UUID, x_owner_key: str = Header(...)) -> InvestigationResponse:
-    rec = await load_result(inv_id, x_owner_key)
+    # A missing/empty key is never a valid owner, so it can never match a
+    # stored owner_key (empty or otherwise) — fail the same way an unknown
+    # id does (404, never 403: spec §9.6, no resource-existence leak).
+    if not x_owner_key.strip():
+        raise HTTPException(status_code=404, detail="not found")
+    rec = await load_result(inv_id, x_owner_key.strip())
     if not rec:
         # 404, never 403 (spec §9.6): don't leak whether the id exists.
         raise HTTPException(status_code=404, detail="not found")
