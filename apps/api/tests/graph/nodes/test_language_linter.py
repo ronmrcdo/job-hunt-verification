@@ -61,6 +61,21 @@ async def test_finding_claim_with_accusation_is_neutralized(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_regenerated_summary_with_raw_url_is_defanged(monkeypatch):
+    # The LLM regen path (contains_accusation gate trips) can introduce a
+    # fresh raw URL in its rewrite; that must still come out defanged
+    # (spec §9.5) rather than skipping the final defang pass.
+    async def fake_call(model, schema, messages, *, node):
+        return schema(summary="Signals consistent with scam patterns, see https://evil.example/apply"), \
+               NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(ll, "structured_call", fake_call)
+    out = await ll.language_linter(_state("Acme Global is a scam and will defraud you."))
+    summary = out["assessment"].summary
+    assert "https://evil.example" not in summary
+    assert "hxxps://evil[.]example" in summary
+
+
+@pytest.mark.asyncio
 async def test_clean_finding_claim_untouched(monkeypatch):
     async def fake_call(*a, **k):
         return None, NodeUsage(node="x", model="cheap")

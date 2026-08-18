@@ -16,7 +16,7 @@ preserved, only the claim text changes.
 
 from pydantic import BaseModel
 from app.graph.state import InvestigationState
-from app.security.defang import contains_accusation
+from app.security.defang import contains_accusation, defang_text
 from app.llm import cheap_model, structured_call
 
 class _Regen(BaseModel):
@@ -47,5 +47,6 @@ async def language_linter(state: InvestigationState) -> dict:
     messages = [("system", _SYSTEM), ("user", summary)]
     regen, _ = await structured_call(cheap_model(), _Regen, messages, node="language_linter")
     clean = regen.summary if not contains_accusation(regen.summary) else _SAFE_TEMPLATE
+    clean = defang_text(clean)
     return {"assessment": state.assessment.model_copy(update={"summary": clean}),
             "findings": findings}
