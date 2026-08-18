@@ -17,7 +17,7 @@ export function QueuedCard() {
 
   return (
     <div className="rounded-none border border-rule bg-surface-soft p-4">
-      <MicroLabel>QUEUED POSTING</MicroLabel>
+      <MicroLabel>What&apos;s queued</MicroLabel>
       <p className="mt-2 whitespace-pre-wrap break-words font-mono text-[13px] leading-[1.6]">
         {state.jobInput}
       </p>

@@ -32,9 +32,8 @@ export default function Page() {
             THIS CHECK
           </h1>
           <p className="max-w-[520px] text-[16px] leading-[1.6] text-secondary">
-            We ask you to sign in so this report attaches to your account and you can find it
-            later — not to see who you are. Privacy is enforced per-browser, via a private key
-            your browser holds; we never share the posting you pasted.
+            Reports name companies and people, so they don&apos;t sit on a public page. Signing
+            in keeps yours to you and lets us hold the report if you close the tab mid-check.
           </p>
           <QueuedCard />
         </div>

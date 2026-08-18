@@ -86,8 +86,8 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
       <div className="text-[13px] leading-[1.5] text-muted">
         <MicroLabel>WHY WE ASK</MicroLabel>
         <p className="mt-1">
-          Signing in attaches this report to your account so you can find it later. We don&apos;t
-          share your posting — privacy is enforced per-browser, not by who you tell us you are.
+          Your reports stay private to your account · we hold an unfinished check for you ·
+          repeat checks on the same posting are counted, never published.
         </p>
       </div>
 
