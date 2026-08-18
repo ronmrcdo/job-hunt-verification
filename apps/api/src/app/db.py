@@ -26,6 +26,7 @@ async def init_tables() -> None:
               assessment JSONB,
               findings JSONB,
               cost JSONB,
+              what_to_verify JSONB,
               created_at TIMESTAMPTZ NOT NULL DEFAULT now());
             CREATE TABLE IF NOT EXISTS sources (
               investigation_id UUID NOT NULL,

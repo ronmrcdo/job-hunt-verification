@@ -134,6 +134,8 @@ export interface components {
             };
             /** Check Count */
             check_count?: number | null;
+            /** What To Verify */
+            what_to_verify?: string[];
         };
         /** Source */
         Source: {

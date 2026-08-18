@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app import db
 from app.cache import bump_check_count, dedupe_key, get_cached_report, put_cached_report
@@ -73,6 +73,11 @@ class InvestigationResponse(BaseModel):
     # Surfaced on a cache hit ("checked N times recently", spec §11); None
     # for a fresh (non-deduped) run.
     check_count: int | None = None
+    # First-class checklist (Task 6.2 contract note): mirrors
+    # state.deterministic_signals["what_to_verify"] (written by the report
+    # node, Task 5.3) so the frontend gets it typed instead of reaching into
+    # an untyped signals dict.
+    what_to_verify: list[str] = Field(default_factory=list)
 
 
 def _excerpt_sources(sources: list[Source]) -> list[Source]:
@@ -88,27 +93,30 @@ def _excerpt_sources(sources: list[Source]) -> list[Source]:
 
 async def _persist(inv_id: uuid.UUID, owner: str, status: str, submission: RawSubmission,
                     assessment: FinalAssessment | None, findings: list[Finding],
-                    sources: list[Source], cost: dict, check_count: int | None = None) -> None:
+                    sources: list[Source], cost: dict, check_count: int | None = None,
+                    what_to_verify: list[str] | None = None) -> None:
     sources = _excerpt_sources(sources)
+    what_to_verify = what_to_verify or []
     if _use_memory_store():
         _RESULTS[str(inv_id)] = {
             "owner": owner, "status": status, "assessment": assessment,
             "findings": findings, "sources": sources, "cost": cost,
-            "check_count": check_count,
+            "check_count": check_count, "what_to_verify": what_to_verify,
         }
         return
     pool = await db.get_pool()
     async with pool.connection() as c:
         await c.execute(
-            "INSERT INTO investigations (id, owner_key, status, submission, assessment, findings, cost) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+            "INSERT INTO investigations (id, owner_key, status, submission, assessment, findings, cost, what_to_verify) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, assessment=EXCLUDED.assessment, "
-            "findings=EXCLUDED.findings, cost=EXCLUDED.cost",
+            "findings=EXCLUDED.findings, cost=EXCLUDED.cost, what_to_verify=EXCLUDED.what_to_verify",
             (inv_id, owner, status,
              json.dumps(submission.model_dump(mode="json")),
              json.dumps(assessment.model_dump(mode="json")) if assessment else None,
              json.dumps([f.model_dump(mode="json") for f in findings]),
-             json.dumps(cost)))
+             json.dumps(cost),
+             json.dumps(what_to_verify)))
     # Persist sources for audit (spec: "persists raw sources + result"). Only
     # the already-excerpted text we hold is written — this API never has
     # full raw HTML to begin with.
@@ -125,7 +133,8 @@ async def load_result(inv_id: uuid.UUID, owner: str) -> dict | None:
     pool = await db.get_pool()
     async with pool.connection() as c:
         cur = await c.execute(
-            "SELECT owner_key, status, assessment, findings, cost FROM investigations WHERE id=%s",
+            "SELECT owner_key, status, assessment, findings, cost, what_to_verify "
+            "FROM investigations WHERE id=%s",
             (inv_id,))
         row = await cur.fetchone()
     if not row or row["owner_key"] != owner:
@@ -145,6 +154,7 @@ async def load_result(inv_id: uuid.UUID, owner: str) -> dict | None:
         "sources": sources,
         "cost": row["cost"] or {},
         "check_count": None,
+        "what_to_verify": row["what_to_verify"] or [],
     }
 
 
@@ -179,13 +189,15 @@ async def create(req: CreateRequest, x_owner_key: str = Header(...)) -> CreateRe
             findings = [Finding(**f) for f in cached.get("findings", [])]
             sources = [Source(**s) for s in cached.get("sources", [])]
             await _persist(inv_id, x_owner_key, "done", submission, assessment, findings,
-                            sources, cached.get("cost", {}), check_count=n)
+                            sources, cached.get("cost", {}), check_count=n,
+                            what_to_verify=cached.get("what_to_verify", []))
             return CreateResponse(id=inv_id)
 
     state, status = await _run_with_deadline(submission, inv_id)
     cost = summarize(state.cost_events)
+    what_to_verify = state.deterministic_signals.get("what_to_verify", [])
     await _persist(inv_id, x_owner_key, status, submission, state.assessment, state.findings,
-                    state.sources, cost)
+                    state.sources, cost, what_to_verify=what_to_verify)
     if key and status == "done":
         # Only reachable on a genuine cache MISS — never re-put over a still
         # valid entry, which would reset bump_check_count's counter.
@@ -194,6 +206,7 @@ async def create(req: CreateRequest, x_owner_key: str = Header(...)) -> CreateRe
             "findings": [f.model_dump(mode="json") for f in state.findings],
             "sources": [s.model_dump(mode="json") for s in _excerpt_sources(state.sources)],
             "cost": cost,
+            "what_to_verify": what_to_verify,
         })
     return CreateResponse(id=inv_id)
 
@@ -212,6 +225,7 @@ async def get(inv_id: uuid.UUID, x_owner_key: str = Header(...)) -> Investigatio
         sources=rec["sources"],
         cost=rec["cost"],
         check_count=rec.get("check_count"),
+        what_to_verify=rec.get("what_to_verify", []),
     )
 
 
