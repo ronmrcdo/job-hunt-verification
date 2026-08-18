@@ -37,11 +37,18 @@ async def safe_fetch(url: str, *, max_bytes: int = 2_000_000) -> FetchResult:
             max_redirects=5,
             event_hooks={"response": [_check_redirect]},
         ) as client:
-            resp = await client.get(url, headers={"User-Agent": "job-hunt-verification/0.0"})
-            body = resp.content[:max_bytes]
-            return FetchResult(
-                url=str(resp.url), status=resp.status_code,
-                ok=resp.is_success, text=body.decode(resp.encoding or "utf-8", "replace"))
+            async with client.stream(
+                "GET", url, headers={"User-Agent": "job-hunt-verification/0.0"}
+            ) as resp:
+                chunks = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    chunks.extend(chunk)
+                    if len(chunks) >= max_bytes:
+                        break
+                body = bytes(chunks[:max_bytes])
+                return FetchResult(
+                    url=str(resp.url), status=resp.status_code,
+                    ok=resp.is_success, text=body.decode(resp.encoding or "utf-8", "replace"))
     except SsrfError as e:
         return FetchResult(url=url, ok=False, error=f"redirect to non-public target: {e}")
     except httpx.TimeoutException:

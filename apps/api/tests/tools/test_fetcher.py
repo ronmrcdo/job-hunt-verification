@@ -25,3 +25,28 @@ async def test_timeout_is_soft_failure(monkeypatch):
     respx.get("https://slow.example.com/").mock(side_effect=httpx.TimeoutException("t"))
     r = await safe_fetch("https://slow.example.com/")
     assert r.ok is False and "timeout" in r.error.lower()
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_redirect_to_private_target_is_soft_failure(monkeypatch):
+    def _resolve(host):
+        if host == "internal.example.com":
+            return ["127.0.0.1"]
+        return ["93.184.216.34"]
+    monkeypatch.setattr("app.security.ssrf._resolve", _resolve)
+    respx.get("https://safe.example.com/start").mock(
+        return_value=httpx.Response(
+            302, headers={"Location": "https://internal.example.com/secret"}))
+    r = await safe_fetch("https://safe.example.com/start")
+    assert r.ok is False
+    assert r.error and ("non-public" in r.error.lower() or "redirect" in r.error.lower())
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_oversize_body_is_truncated(monkeypatch):
+    monkeypatch.setattr("app.security.ssrf._resolve", lambda h: ["93.184.216.34"])
+    respx.get("https://big.example.com/").mock(
+        return_value=httpx.Response(200, text="A" * 1000))
+    r = await safe_fetch("https://big.example.com/", max_bytes=100)
+    assert r.ok is True
+    assert len(r.text) <= 100
