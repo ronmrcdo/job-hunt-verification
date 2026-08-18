@@ -102,4 +102,16 @@ describe("FindingCard", () => {
     expect(container.querySelector('[data-row-tone="neutral"]')).not.toBeNull();
     expect(container.textContent).not.toContain("WARNING");
   });
+
+  it("gives the unverifiable finding's marker dot the muted/grey color, never the suspicious color, even though it has severity medium (product rule #6)", () => {
+    const finding = findingsById().get("F-06")!;
+    expect(finding.direction).toBe("unverifiable");
+    expect(finding.severity).toBe("medium");
+
+    const { container } = render(<FindingCard finding={finding} />);
+    const marker = container.querySelector('[data-severity="unverified"]');
+    expect(marker).not.toBeNull();
+    expect((marker as HTMLElement).style.background).toBe("var(--color-muted)");
+    expect(container.querySelector('[data-severity="medium"]')).toBeNull();
+  });
 });

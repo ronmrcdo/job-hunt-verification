@@ -16,17 +16,21 @@ interface SeverityMarker {
   dataSeverity: "critical" | "high" | "medium" | "legit" | "unverified" | "low" | "info";
 }
 
-// Severity wins for critical/high/medium; otherwise the marker follows
-// direction (legit/unverifiable). A suspicious finding with no severity
-// (or low/info) still reads as suspicious.
+// Critical severity always wins (it must read as critical regardless of
+// direction). Below that, product rule #6 requires the unverifiable group to
+// read as visually NEUTRAL — grey marker, never a warning — so direction ===
+// "unverifiable" wins next, overriding a high/medium severity that would
+// otherwise paint the marker orange. Only once neither of those applies does
+// severity (high/medium) drive the marker; otherwise it follows direction
+// (legit) or defaults to suspicious.
 function severityMarker(finding: FindingVM): SeverityMarker {
   const { severity, direction } = finding;
   if (severity === "critical") return { color: "var(--color-critical)", dataSeverity: "critical" };
+  if (direction === "unverifiable") return { color: "var(--color-muted)", dataSeverity: "unverified" };
   if (severity === "high" || severity === "medium") {
     return { color: "var(--color-suspicious)", dataSeverity: severity };
   }
   if (direction === "legitimizing") return { color: "var(--color-legit)", dataSeverity: "legit" };
-  if (direction === "unverifiable") return { color: "var(--color-muted)", dataSeverity: "unverified" };
   return { color: "var(--color-suspicious)", dataSeverity: severity ?? "info" };
 }
 

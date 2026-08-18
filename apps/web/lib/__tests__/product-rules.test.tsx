@@ -213,21 +213,31 @@ describe("product rules (rendered tree, Task 3.6): provenance label count", () =
 });
 
 describe("product rules (rendered tree, Task 3.6): unverifiable markers are neutral, not alarming", () => {
-  // Rule #6 neutrality is enforced at the row level (data-row-tone="neutral"
-  // -> --color-neutral-row), not the small severity-marker dot: FindingCard
-  // deliberately lets severity (critical/high/medium) win the dot color even
-  // on an unverifiable-direction finding (see FindingCard.tsx's
-  // severityMarker doc comment), so a medium-severity unverifiable finding's
-  // dot can be the suspicious color — the row background is what must never
-  // read as an alarm.
-  it("every unverifiable FindingCard row carries data-row-tone=neutral with the neutral-row background, never critical/alarm", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+  // Rule #6 (authoritative): the unverifiable group must read as visually
+  // NEUTRAL — a grey MARKER, light-grey background, never a warning. This
+  // constrains FindingCard's severityMarker(): direction === "unverifiable"
+  // wins the marker-dot color (var(--color-muted), data-severity="unverified")
+  // even when the finding also carries a high/medium severity — severity is
+  // only allowed to win the dot for critical findings. The row background
+  // (data-row-tone="neutral" -> --color-neutral-row) is a supplementary,
+  // non-alarming check, not a substitute for the marker guarantee.
+  it.each([
+    ["HIGH", SAMPLE_HIGH],
+    ["LOW", SAMPLE_LOW],
+  ])("%s report: every unverifiable finding's marker dot is grey/muted, and its row is neutral", (_label, sample) => {
+    const vm = toReportViewModel(sample.inv, sample.submitted);
     const { container } = renderAssembledReport(vm);
 
     const unverifiableFindingIds = new Set(
       vm.groups.find((g) => g.key === "unverifiable")!.findings.map((f) => f.recordId),
     );
     expect(unverifiableFindingIds.size).toBeGreaterThan(0);
+
+    const markers = container.querySelectorAll('[data-severity="unverified"]');
+    expect(markers.length).toBe(unverifiableFindingIds.size);
+    for (const marker of markers) {
+      expect((marker as HTMLElement).style.background).toBe("var(--color-muted)");
+    }
 
     const rows = container.querySelectorAll('[data-row-tone="neutral"]');
     expect(rows.length).toBe(unverifiableFindingIds.size);
