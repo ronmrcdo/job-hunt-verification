@@ -10,9 +10,19 @@ from app.graph.state import InvestigationState, Finding
 
 _PATTERNS = {
     "ignore_previous": re.compile(r"ignore (all |the )?previous", re.I),
-    "ai_assistant": re.compile(r"\b(ai|language model) (assistant|model)\b", re.I),
+    # Requires instructional/address framing around the AI reference, so
+    # ordinary job titles like "AI Assistant Engineer" don't match — only
+    # imperative phrasing aimed at an AI verifier does.
+    "ai_assistant": re.compile(
+        r"(you are (an?|the) (ai|language model) (assistant|model)s?)"
+        r"|(as (an?|the) (ai|language model) (assistant|model)s?)"
+        r"|(dear (ai|language model) (assistant|model)s?)"
+        r"|(attention (ai|language model) (assistant|model)s?)"
+        r"|((ai|language model) (assistant|model)s?\s*:)",
+        re.I,
+    ),
     "note_to_ai": re.compile(r"note to (ai|assistants?)", re.I),
-    "mark_legitimate": re.compile(r"mark (this )?(as )?(legitimate|verified|safe)", re.I),
+    "mark_legitimate": re.compile(r"\bmark (this )?(as )?(legitimate|verified|safe)", re.I),
     "disregard": re.compile(r"disregard (risk|the above|prior)", re.I),
 }
 
