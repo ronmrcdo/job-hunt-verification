@@ -19,11 +19,16 @@ async def domain_age_days(domain: str, *, today: date) -> int | None:
         data = json.loads(res.text)
     except json.JSONDecodeError:
         return None
+    if not isinstance(data, dict):
+        return None
     for event in data.get("events", []):
         if event.get("eventAction") == "registration":
+            raw = event.get("eventDate")
+            if not isinstance(raw, str):
+                return None
             try:
-                reg = datetime.fromisoformat(event["eventDate"].replace("Z", "+00:00")).date()
-            except (KeyError, ValueError):
+                reg = datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+            except ValueError:
                 return None
             return (today - reg).days
     return None

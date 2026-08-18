@@ -17,3 +17,20 @@ async def test_unavailable_rdap_returns_none(monkeypatch):
     monkeypatch.setattr("app.security.ssrf._resolve", lambda h: ["93.184.216.34"])
     respx.get("https://rdap.org/domain/weird.zz").mock(return_value=httpx.Response(404))
     assert await domain_age_days("weird.zz", today=date(2026, 1, 1)) is None
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_null_event_date_returns_none(monkeypatch):
+    monkeypatch.setattr("app.security.ssrf._resolve", lambda h: ["93.184.216.34"])
+    body = {"events": [{"eventAction": "registration", "eventDate": None}]}
+    respx.get("https://rdap.org/domain/nulldate.com").mock(
+        return_value=httpx.Response(200, text=json.dumps(body)))
+    assert await domain_age_days("nulldate.com", today=date(2020, 1, 31)) is None
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_non_dict_body_returns_none(monkeypatch):
+    monkeypatch.setattr("app.security.ssrf._resolve", lambda h: ["93.184.216.34"])
+    respx.get("https://rdap.org/domain/listbody.com").mock(
+        return_value=httpx.Response(200, text=json.dumps([1, 2, 3])))
+    assert await domain_age_days("listbody.com", today=date(2020, 1, 31)) is None
