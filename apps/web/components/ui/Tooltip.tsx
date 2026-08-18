@@ -32,6 +32,18 @@ export function Tooltip({ label, children }: TooltipProps) {
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Escape") {
       setOpen(false);
+      return;
+    }
+    // Explicit Enter/Space handling (matches VerifyChecklist's pattern):
+    // real browsers already activate a native <button> on these keys, but
+    // that activation-on-keydown/keyup behavior is a user-agent default
+    // action, not a DOM event dispatch — it isn't reproducible in jsdom via
+    // fireEvent, so we handle it ourselves for reliability and testability.
+    // preventDefault suppresses the browser's own click-on-activation so
+    // toggling here doesn't double-fire in a real browser.
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      setOpen((current) => !current);
     }
   }
 
