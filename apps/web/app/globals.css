@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #26282C; --color-ink-hover: #3D4046; --color-ink-muted: #4A4D53;
+  --color-body: #1A1A1A; --color-secondary: #444444; --color-muted: #666666; --color-faint: #888888;
+  --color-page: #FFFFFF; --color-surface-soft: #F7F7F5; --color-surface-alt: #FAFAF8; --color-neutral-row: #FAFAFA;
+  --color-rule: #EDEDEA; --color-rule-soft: #E8E8E5;
+  --color-legit: #3F6B4A; --color-suspicious: #A8501F;
+  --color-critical: #A3241C; --color-critical-tint: #FDF7F4; --color-critical-rule: #E6C3BF;
+  --color-warn-tint: #FBF2EC; --color-warn-rule: #E4CBB9;
+  --color-band-low: #8FB79C; --color-band-moderate: #C79A4A; --color-band-high: #E08A55;
+  --color-band-high-on-white: #B96A34; --color-band-critical: #C6413A;
+  --font-sans: Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "JetBrains Mono", monospace;
+  --shadow-band: 0 1px 2px rgba(38,40,44,0.06);
+}
+
+@layer base {
+  body { @apply bg-page text-body antialiased; font-family: var(--font-sans); }
+}
