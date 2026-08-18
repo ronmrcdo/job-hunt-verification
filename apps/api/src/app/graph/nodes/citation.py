@@ -15,7 +15,7 @@ def citation_validator(state: InvestigationState) -> dict:
         if not cited:
             drops += 1
             continue
-        if f.provenance != "web_verified":
+        if f.provenance == "deterministic":
             survivors.append(f)
             continue
         claim_tokens = _tokens(f.claim)

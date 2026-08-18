@@ -42,6 +42,17 @@ def test_drops_web_verified_finding_with_no_token_overlap():
     assert out["findings"] == []
     assert out["deterministic_signals"]["citation_drops"] == 1
 
+def test_drops_user_provided_unverified_finding_with_no_token_overlap():
+    # user_provided_unverified findings are NOT exempt from the token check —
+    # only deterministic-provenance findings are (they cite synthetic sources).
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+        sources=[_src("src_001", "the recruiter asked me to buy a laptop with my own money")],
+        findings=[_f("f1", ["src_001"], "The company offers a competitive salary",
+                     prov="user_provided_unverified")])
+    out = citation_validator(state)
+    assert out["findings"] == []
+    assert out["deterministic_signals"]["citation_drops"] == 1
+
 def test_citation_drops_merges_into_existing_signals():
     state = InvestigationState(submission=RawSubmission(job_text="x"),
         sources=[],
