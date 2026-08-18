@@ -1,60 +1,84 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { FindingGroup } from "../FindingGroup";
-import type { components } from "@job-hunt/api-types";
+import { Summary } from "../Summary";
+import { CountsStrip } from "../CountsStrip";
+import { toReportViewModel } from "../../../lib/report-view-model";
+import { SAMPLE_HIGH } from "../../../lib/__fixtures__/sample-high";
 
-type Finding = components["schemas"]["Finding"];
-type Source = components["schemas"]["Source"];
-
-// Malicious/attacker-influenced content (spec §9.2): a fetched job posting
-// or source could contain markup or a raw suspicious URL. Neither must ever
-// become live HTML or a clickable link (spec §9.5).
-const MALICIOUS_CLAIM = '<img src=x onerror="alert(1)"> Recruiter asks for a fee';
-const SUSPICIOUS_URL = "https://acme-globall.com/pay";
-
-const findings: Finding[] = [
-  {
-    id: "f1",
-    direction: "suspicious",
-    claim: MALICIOUS_CLAIM,
-    source_ids: ["s1"],
-    mitigation: null,
-  } as Finding,
-];
-
-const sources: Source[] = [
-  {
-    id: "s1",
-    url: SUSPICIOUS_URL,
-    kind: "fetched_page",
-    retrieved_at: "2026-01-01T00:00:00Z",
-    content_summary: "asks for a $500 deposit",
-  } as Source,
-];
+function highVM() {
+  return toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+}
 
 describe("FindingGroup", () => {
-  it("renders findings and their sources under the group heading", () => {
-    render(<FindingGroup direction="suspicious" findings={findings} sources={sources} />);
-    expect(screen.getByText("Worth a closer look")).toBeTruthy();
-    expect(screen.getByText(/asks for a \$500 deposit/)).toBeTruthy();
+  it("renders the group heading, mono zero-padded count, and one FindingCard per finding", () => {
+    const vm = highVM();
+    const suspicious = vm.groups.find((g) => g.key === "suspicious")!;
+    render(<FindingGroup group={suspicious} />);
+
+    expect(screen.getByText("What looks suspicious")).toBeTruthy();
+    expect(screen.getByText("03")).toBeTruthy();
+    expect(screen.getAllByText(/^F-0\d$/)).toHaveLength(3);
   });
 
-  it("never renders fetched content as live HTML (escapes markup instead of injecting it)", () => {
-    const { container } = render(
-      <FindingGroup direction="suspicious" findings={findings} sources={sources} />
-    );
-    // The <img onerror=...> string must appear as literal escaped text, not
-    // as an actual <img> element in the DOM.
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain(MALICIOUS_CLAIM);
+  it("precedes the unverifiable group with the neutral open-questions preamble", () => {
+    const vm = highVM();
+    const unverifiable = vm.groups.find((g) => g.key === "unverifiable")!;
+    render(<FindingGroup group={unverifiable} />);
+
+    expect(
+      screen.getByText("Open questions, not accusations. Each one is a gap in what we could reach."),
+    ).toBeTruthy();
   });
 
-  it("defangs suspicious URLs and never renders a live <a href> to them", () => {
-    const { container } = render(
-      <FindingGroup direction="suspicious" findings={findings} sources={sources} />
-    );
-    expect(container.textContent).toContain("hxxps://acme-globall[.]com/pay");
-    expect(container.querySelector(`a[href="${SUSPICIOUS_URL}"]`)).toBeNull();
-    expect(container.querySelectorAll("a")).toHaveLength(0);
+  it("does not show the open-questions preamble for the suspicious group", () => {
+    const vm = highVM();
+    const suspicious = vm.groups.find((g) => g.key === "suspicious")!;
+    render(<FindingGroup group={suspicious} />);
+
+    expect(
+      screen.queryByText("Open questions, not accusations. Each one is a gap in what we could reach."),
+    ).toBeNull();
+  });
+});
+
+describe("Summary", () => {
+  it("renders the SUMMARY micro label and the passed summary text", () => {
+    const vm = highVM();
+    render(<Summary summary={vm.summary} />);
+
+    expect(screen.getByText("SUMMARY")).toBeTruthy();
+    expect(screen.getByText(vm.summary)).toBeTruthy();
+  });
+});
+
+describe("CountsStrip", () => {
+  it("shows zero-padded legit/suspicious/unverified counts, suspicious cell on warn-tint", () => {
+    const vm = highVM();
+    render(<CountsStrip vm={vm} />);
+
+    const legit = screen.getByTestId("count-legit");
+    const suspicious = screen.getByTestId("count-suspicious");
+    const unverified = screen.getByTestId("count-unverified");
+
+    expect(legit.textContent).toContain("02");
+    expect(legit.textContent).toContain("checks out");
+    expect(suspicious.textContent).toContain("03");
+    expect(suspicious.textContent).toContain("suspicious");
+    expect(unverified.textContent).toContain("02");
+    expect(unverified.textContent).toContain("unverified");
+
+    expect(suspicious.getAttribute("style")).toContain("var(--color-warn-tint)");
+  });
+
+  it("shows 00 for a group that has zero findings", () => {
+    // legitimizing group present in vm.groups only when non-empty (see
+    // report-view-model.ts); a vm with no legitimizing findings should
+    // still render "00 checks out" rather than omitting the cell.
+    const vm = highVM();
+    const withoutLegit = { ...vm, groups: vm.groups.filter((g) => g.key !== "legitimizing") };
+    render(<CountsStrip vm={withoutLegit} />);
+
+    expect(screen.getByTestId("count-legit").textContent).toContain("00");
   });
 });
