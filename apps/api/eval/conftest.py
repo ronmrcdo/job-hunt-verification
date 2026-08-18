@@ -34,20 +34,19 @@ Stubbing design (spec §10 / task 6.4 brief):
       deterministic `contains_accusation` gate trips, which the neutral
       stub-report summary below never does — so neither makes a live call.
 
-No V0 dataset case's job posting text ever becomes a `Source` on its own
-(intake only extracts entities; nothing else echoes the raw posting text
-into evidence) — yet the injection scanner and the analysis LLM both work
-over `state.sources`, and several dataset cases embed their signal (a
-prompt-injection attempt, an ID/payment request, a cross-posted contact
-mismatch) directly in the posting text. `_stub_research` mirrors what a
-real fetched/cross-posted copy of the same posting would contribute — a
-`Source` whose content is the submitted posting text — so those signals are
-reachable by the deterministic injection scanner and the rule-based
-analysis stub, without needing a live search hit to have found one.
+The pasted job posting text becomes a `Source` for real, via
+`evidence_assembly` (deterministic, never stubbed here — see
+graph/nodes/evidence.py `_posting_source`), so the injection scanner and the
+analysis LLM both see it through `state.sources` without any eval-only
+fabrication. `_stub_research` is therefore a no-op: it used to fabricate a
+duplicate posting Source itself (before evidence_assembly did this for
+real), which would have masked the production gap where the guardrail never
+saw the posting at all. `_stub_analysis` below still locates the posting
+Source by its `POSTING_SOURCE_PREFIX`-tagged `content_summary`, which
+`evidence_assembly` produces with the same prefix.
 """
 import os
 import re
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import pytest
@@ -55,7 +54,8 @@ import pytest
 from app.checks import deterministic as deterministic_checks_module
 from app.graph import build
 from app.graph.nodes import crosspost as crosspost_module
-from app.graph.state import ExtractedEntities, Finding, InvestigationState, Source
+from app.graph.nodes.evidence import POSTING_SOURCE_PREFIX as _POSTING_SOURCE_PREFIX
+from app.graph.state import ExtractedEntities, Finding, InvestigationState
 
 
 # ---------------------------------------------------------------------------
@@ -150,25 +150,15 @@ async def _stub_intake(state: InvestigationState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# research stub: echoes the submitted posting text back as a Source, the way
-# a real fetched/cross-posted copy of the same listing would (see module
-# docstring). No summarization LLM call, no network.
+# research stub: no-op. The posting Source now comes from evidence_assembly
+# for real (see module docstring) — a conservative, always-safe stand-in for
+# the network-dependent company-research node, same pattern as
+# `_stub_advocate` below.
 # ---------------------------------------------------------------------------
-
-_POSTING_SOURCE_PREFIX = "Submitted job posting text:"
 
 
 async def _stub_research(state: InvestigationState) -> dict:
-    text = state.submission.job_text[:2000]
-    src = Source(
-        id="raw_stub_posting",
-        url=state.submission.job_url,
-        kind="fetched_page" if state.submission.job_url else "search_result",
-        retrieved_at=datetime.now(timezone.utc),
-        content_summary=f"{_POSTING_SOURCE_PREFIX} {text}",
-        raw_excerpt=text,
-    )
-    return {"raw_sources": [src]}
+    return {}
 
 
 # ---------------------------------------------------------------------------

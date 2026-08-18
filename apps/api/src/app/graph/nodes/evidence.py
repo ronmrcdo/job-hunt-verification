@@ -1,16 +1,61 @@
-from app.graph.state import InvestigationState
+from datetime import datetime, timezone
+
+from app.graph.state import InvestigationState, Source
+
+# Mirrors app.graph.nodes.research.EXCERPT_CAP -- keep unbounded posting text
+# out of graph state, same as every other Source.
+POSTING_EXCERPT_CAP = 2000
+POSTING_SOURCE_PREFIX = "Submitted job posting text:"
+
+
+def _posting_source(state: InvestigationState) -> Source | None:
+    """Turns the submitter's pasted job posting into a canonical, citable
+    `Source` (spec §4, §9.2, §14 -- V0 is posting-only, no job_url fetch).
+    This is the ONLY conduit by which the posting's own content reaches
+    analysis's evidence pack and the injection scanner in V0; without it
+    the §9.2 injection guardrail never sees its primary input.
+
+    Built here in evidence_assembly (deterministic, always real -- the eval
+    harness stubs the LLM/network nodes but not this one) rather than in
+    intake_extraction (an LLM node, stubbed in eval), so the guardrail is
+    exercised on the real path everywhere, including the eval harness.
+
+    Uses the `src_det_*` canonical-id convention (see checks_node.py) so the
+    dedup loop below preserves it as-is. `kind="user_provided"` marks it as
+    submitter-supplied, not a deterministic lookup result -- downstream
+    consumers (injection scan, analysis's evidence pack) still treat it as
+    untrusted, attacker-influenced content like any other source."""
+    text = state.submission.job_text
+    if not text:
+        return None
+    excerpt = text[:POSTING_EXCERPT_CAP]
+    return Source(
+        id="src_det_posting", url=state.submission.job_url, kind="user_provided",
+        retrieved_at=datetime.now(timezone.utc),
+        content_summary=f"{POSTING_SOURCE_PREFIX} {excerpt}",
+        raw_excerpt=excerpt,
+    )
+
 
 def evidence_assembly(state: InvestigationState) -> dict:
     """Consolidates the fan-out branches' accumulated raw_sources/raw_findings
     (additive-reducer channels, so concurrent branch writes don't conflict)
     into the canonical, replace-semantics sources/findings the rest of the
-    graph (post-barrier) reads. Never exposes raw_* outside the graph."""
+    graph (post-barrier) reads. Never exposes raw_* outside the graph.
+
+    Also injects the pasted job posting itself as a canonical Source (see
+    `_posting_source`) so it flows into injection scanning and analysis."""
     id_map: dict[str, str] = {}          # old id -> canonical id
     url_to_canonical: dict[str, str] = {}
     canonical_sources = []
     counter = 1
 
-    for src in state.sources + state.raw_sources:
+    all_sources = state.sources + state.raw_sources
+    posting_src = _posting_source(state)
+    if posting_src is not None:
+        all_sources = all_sources + [posting_src]
+
+    for src in all_sources:
         if src.id.startswith("src_det_"):        # already canonical deterministic source
             id_map[src.id] = src.id
             canonical_sources.append(src)
