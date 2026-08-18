@@ -60,12 +60,19 @@ def build_company_queries(entities) -> list[str]:
 
 def build_crosspost_queries(entities) -> list[str]:
     """Queries for finding this exact job posting cross-posted elsewhere,
-    using an exact-phrase match on the job title to keep results relevant."""
+    using an exact-phrase match on the job title to keep results relevant.
+    The company clause is only included when a company_name is present, so
+    an absent company never leaves behind an empty `""` token."""
     title = entities.job_title or ""
     name = entities.company_name or ""
     if not title:
         return []
+    if name:
+        return [
+            f'"{title}" "{name}" job posting',
+            f'"{title}" {name} apply contact email',
+        ]
     return [
-        f'"{title}" "{name}" job posting',
-        f'"{title}" {name} apply contact email',
+        f'"{title}" job posting',
+        f'"{title}" apply contact email',
     ]

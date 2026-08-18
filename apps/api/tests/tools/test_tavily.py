@@ -20,3 +20,32 @@ async def test_tavily_search_maps_hits(monkeypatch):
     monkeypatch.setattr(tavily, "_raw_search", fake_search)
     hits = await tavily.tavily_search("acme scam")
     assert hits[0].url == "https://x" and hits[0].title == "T"
+
+
+def test_crosspost_queries_with_title_and_company():
+    ent = SimpleNamespace(company_name="Acme Global", company_domain="acme.com",
+                          job_title="Engineer", salary=None, key_phrases=[])
+    qs = tavily.build_crosspost_queries(ent)
+    assert qs == [
+        '"Engineer" "Acme Global" job posting',
+        '"Engineer" Acme Global apply contact email',
+    ]
+
+
+def test_crosspost_queries_empty_when_no_job_title():
+    ent = SimpleNamespace(company_name="Acme Global", company_domain="acme.com",
+                          job_title="", salary=None, key_phrases=[])
+    assert tavily.build_crosspost_queries(ent) == []
+
+    ent2 = SimpleNamespace(company_name="Acme Global", company_domain="acme.com",
+                           job_title=None, salary=None, key_phrases=[])
+    assert tavily.build_crosspost_queries(ent2) == []
+
+
+def test_crosspost_queries_omit_company_clause_when_company_name_missing():
+    ent = SimpleNamespace(company_name=None, company_domain=None,
+                          job_title="Engineer", salary=None, key_phrases=[])
+    qs = tavily.build_crosspost_queries(ent)
+    assert qs
+    for q in qs:
+        assert '""' not in q
