@@ -51,3 +51,20 @@ def assert_public_url(url: str) -> None:
     if not parsed.hostname:
         raise SsrfError("missing host")
     resolve_public_ips(parsed.hostname)
+
+
+def validate_and_pin(url: str) -> tuple[str, str]:
+    """Resolve + validate `url`'s host and return (hostname, validated_ip).
+
+    Callers must connect using the returned IP directly rather than letting
+    the HTTP client re-resolve the hostname later (TOCTOU / DNS-rebinding
+    guard, spec §9.3) — the IP returned here is the one that was actually
+    checked against the private/loopback/link-local/metadata blocklist.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise SsrfError(f"scheme not allowed: {parsed.scheme!r}")
+    if not parsed.hostname:
+        raise SsrfError("missing host")
+    ips = resolve_public_ips(parsed.hostname)
+    return parsed.hostname, ips[0]
