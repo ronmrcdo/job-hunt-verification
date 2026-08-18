@@ -112,8 +112,23 @@ def compute_assessment(state: InvestigationState) -> FinalAssessment:
     # user_provided_unverified) -- a deterministic signal (e.g. WHOIS lookup)
     # is trusted on its own and is not capped by this rule.
     soft_suspicious = [f for f in suspicious if f.provenance != "deterministic"]
+    deterministic_suspicious = [f for f in suspicious if f.provenance == "deterministic"]
     if len(suspicious) == 1 and len(soft_suspicious) == 1:
         band = _cap(band, "MODERATE")
+
+    # Rule (generalized FP defense, devil's advocate finding #4): the original
+    # one-band cap above only fires for the single-finding case. With two or
+    # more soft (web_verified / user_provided) suspicious findings, the
+    # analysis LLM's self-assigned severities + count alone could still drive
+    # the band to HIGH or CRITICAL with zero deterministic corroboration --
+    # defeating the FP-defense intent of §5/§1.1 ("the LLM never decides the
+    # band alone"). Soft-only suspicion (no deterministic-provenance
+    # suspicious finding, no payment-floor trigger) is capped at HIGH:
+    # reaching CRITICAL requires a deterministic corroborator or the payment
+    # floor below.
+    payment_floor_triggered = any(_is_payment_finding(f) for f in findings)
+    if band == "CRITICAL" and not deterministic_suspicious and not payment_floor_triggered:
+        band = _cap(band, "HIGH")
 
     # Rule: user_provided_unverified findings alone cannot push a NAMED company
     # past MODERATE (spec §9.1 sabotage defense: a candidate can't get their own

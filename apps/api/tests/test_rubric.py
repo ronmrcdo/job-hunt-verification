@@ -91,6 +91,36 @@ def test_staffing_agency_reframe_caps_recruiter_and_job_findings():
     assert _BANDS.index(a_agency.band) <= _BANDS.index(a_normal.band)
 
 
+def test_two_soft_findings_alone_cannot_reach_critical():
+    # Devil's advocate finding #4: two soft (web_verified) suspicious findings
+    # with zero deterministic corroboration and no payment floor used to drive
+    # the band straight to CRITICAL off the analysis LLM's severity labels
+    # alone. The generalized FP defense caps soft-only suspicion at HIGH.
+    a = compute_assessment(_state([
+        _f("f1", "critical", category="company"),
+        _f("f2", "high", category="domain"),
+    ]))
+    assert a.band != "CRITICAL"
+    assert a.band in ("MODERATE", "HIGH")
+
+
+def test_deterministic_signal_still_reaches_high():
+    # A deterministic-provenance suspicious finding (e.g. homoglyph hit) is
+    # trusted on its own and must not be capped by the soft-only rule.
+    a = compute_assessment(_state([_f("f1", "high", prov="deterministic")]))
+    assert a.band == "HIGH"
+
+
+def test_payment_floor_still_high_with_soft_findings():
+    # Payment floor must still force HIGH even alongside soft findings.
+    a = compute_assessment(_state([
+        _f("f1", "critical", category="company"),
+        _f("pay", "low", category="communication",
+           claim="Recruiter requested a $200 onboarding fee"),
+    ]))
+    assert a.band in ("HIGH", "CRITICAL")
+
+
 def test_payment_markers_frozenset_exported():
     assert isinstance(PAYMENT_MARKERS, frozenset)
     assert "fee" in PAYMENT_MARKERS or "wire" in PAYMENT_MARKERS
