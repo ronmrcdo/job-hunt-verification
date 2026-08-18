@@ -25,7 +25,7 @@ from app.graph.state import InvestigationState
 from app.llm import cheap_model, structured_call
 from app.security.defang import defang_url
 
-_URL_RE = re.compile(r"https?://[^\s)\]}'\"<>]+")
+_URL_RE = re.compile(r"https?://[^\s)\]}'\"<>]+", re.IGNORECASE)
 
 
 class _ReportLLM(BaseModel):
@@ -65,8 +65,18 @@ def _pack(state: InvestigationState) -> str:
     )
 
 
+def _defang_match(match: re.Match) -> str:
+    # defang_url does case-sensitive literal replaces: "https://"/"http://" on
+    # the scheme, and `parsed.hostname` (which urlparse always lowercases) on
+    # the host. A mixed/upper-case URL (e.g. "HTTPS://Evil.COM") would fail
+    # both of those literal matches and pass through undefanged, so lowercase
+    # the whole matched URL before handing it to defang_url — the defanged
+    # form is not meant to be clickable, so case fidelity doesn't matter here.
+    return defang_url(match.group(0).lower())
+
+
 def _defang_text(text: str) -> str:
-    return _URL_RE.sub(lambda m: defang_url(m.group(0)), text)
+    return _URL_RE.sub(_defang_match, text)
 
 
 def _with_payment_check(checklist: list[str], band: str) -> list[str]:

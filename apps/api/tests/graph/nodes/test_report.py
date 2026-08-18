@@ -86,6 +86,27 @@ async def test_report_defangs_urls_in_llm_output(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_report_defangs_mixed_case_scheme_in_llm_output(monkeypatch):
+    async def fake_call(model, schema, messages, *, node):
+        return schema(
+            summary="We found signals consistent with known scam patterns; see "
+                     "HTTPS://Evil-Example.COM/pay for details.",
+            what_to_verify=["Confirm Http://Evil.com/x on the company's official careers page."],
+        ), NodeUsage(node=node, model="cheap", usd=0.002)
+    monkeypatch.setattr(report, "structured_call", fake_call)
+    state = _state()
+    out = await report.report_generation(state)
+    summary = out["assessment"].summary
+    checklist = out["deterministic_signals"]["what_to_verify"]
+    assert "https://" not in summary.lower()
+    assert "http://" not in summary.lower()
+    assert "hxxps://evil-example[.]com" in summary.lower()
+    assert all("https://" not in item.lower() and "http://" not in item.lower()
+               for item in checklist)
+    assert any("hxxp://evil[.]com" in item.lower() for item in checklist)
+
+
+@pytest.mark.asyncio
 async def test_report_flags_payment_check_for_critical_band(monkeypatch):
     async def fake_call(model, schema, messages, *, node):
         return schema(summary="We found several signals consistent with known scam patterns.",
