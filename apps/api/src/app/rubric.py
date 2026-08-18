@@ -88,9 +88,18 @@ def _floor(band: Band, floor: Band) -> Band:
 
 def _coverage(findings: list[Finding]) -> float:
     """Fraction of the six entity-dimension categories with >=1 source-backed
-    or deterministic finding. This is the sole driver of confidence -- the LLM
-    never self-reports confidence (rule 4)."""
-    covered = {f.category for f in findings if f.source_ids}
+    finding that actually verified something. This is the sole driver of
+    confidence -- the LLM never self-reports confidence (rule 4).
+
+    `unverifiable`-direction findings are excluded: a branch timeout (or any
+    other degrade-to-unverifiable path, see graph/build.py's branch-timeout
+    wrapper) still emits a source-backed synthetic finding so citation
+    validation doesn't drop it, but it verified nothing about that category.
+    Counting it toward coverage would let a fully-timed-out investigation
+    still read as HIGH confidence, which is exactly what spec §5 rule 4
+    ("timed-out branches lower coverage, which lowers confidence") rules
+    out."""
+    covered = {f.category for f in findings if f.source_ids and f.direction != "unverifiable"}
     return len(covered & set(_CATEGORIES)) / len(_CATEGORIES)
 
 

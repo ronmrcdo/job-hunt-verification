@@ -1,3 +1,4 @@
+import pytest
 from app.graph.state import InvestigationState, RawSubmission, ExtractedEntities, Finding
 from app.rubric import compute_assessment, score_findings, PAYMENT_MARKERS
 
@@ -124,3 +125,43 @@ def test_payment_floor_still_high_with_soft_findings():
 def test_payment_markers_frozenset_exported():
     assert isinstance(PAYMENT_MARKERS, frozenset)
     assert "fee" in PAYMENT_MARKERS or "wire" in PAYMENT_MARKERS
+
+
+def test_all_timed_out_branches_yield_low_confidence_not_high():
+    # Rule 4 (§5): "Timed-out branches lower coverage, which lowers
+    # confidence — degradation is automatic." A fully-timed-out investigation
+    # (every category only has a synthetic "unverifiable" finding, the shape
+    # graph/build.py's branch-timeout wrapper emits) must NOT read as HIGH
+    # confidence just because every category technically has a source-backed
+    # finding.
+    timeouts = [
+        _f("t1", "info", direction="unverifiable", prov="deterministic", category=cat,
+           claim=f"{cat} did not complete within the time budget — treat as unverifiable.")
+        for cat in ("company", "job", "recruiter", "domain", "communication", "cross_source")
+    ]
+    a = compute_assessment(_state(timeouts))
+    assert a.coverage == 0.0
+    assert a.confidence == "LOW"
+
+
+def test_genuinely_covered_case_still_gets_its_confidence():
+    # A real (non-unverifiable) source-backed finding in every category
+    # still drives confidence up as before.
+    wide = [_f(f"f{i}", "low", category=cat)
+            for i, cat in enumerate(("company", "domain", "recruiter", "job",
+                                      "cross_source", "communication"))]
+    a = compute_assessment(_state(wide))
+    assert a.coverage == 1.0
+    assert a.confidence == "HIGH"
+
+
+def test_mixed_timeout_and_real_coverage_only_counts_real():
+    # One real, source-backed finding plus five timed-out ("unverifiable")
+    # categories should read as low coverage, not near-full.
+    findings = [_f("real", "low", category="company")] + [
+        _f(f"t{i}", "info", direction="unverifiable", prov="deterministic", category=cat)
+        for i, cat in enumerate(("job", "recruiter", "domain", "communication", "cross_source"))
+    ]
+    a = compute_assessment(_state(findings))
+    assert a.coverage == pytest.approx(1 / 6, abs=0.001)  # rounded to 3 decimals
+    assert a.confidence == "LOW"
