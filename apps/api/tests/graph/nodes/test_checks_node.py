@@ -15,7 +15,7 @@ async def test_homoglyph_produces_suspicious_finding(monkeypatch):
                                    candidate_real_domain="acme-global.com"))
     out = await checks_node.deterministic_checks_node(state)
     assert out["deterministic_signals"]["homoglyph_hit"] is True
-    homoglyph = [f for f in out["findings"] if "lookalike" in f.claim.lower()]
+    homoglyph = [f for f in out["raw_findings"] if "lookalike" in f.claim.lower()]
     assert homoglyph and homoglyph[0].direction == "suspicious"
     assert homoglyph[0].provenance == "deterministic"
     assert homoglyph[0].source_ids  # cites a deterministic source
@@ -29,5 +29,5 @@ async def test_ats_produces_legitimizing_finding(monkeypatch):
     state = InvestigationState(submission=RawSubmission(job_text="x"),
                               entities=ExtractedEntities(recruiter_email="jo@lever.co"))
     out = await checks_node.deterministic_checks_node(state)
-    ats = [f for f in out["findings"] if f.direction == "legitimizing"]
+    ats = [f for f in out["raw_findings"] if f.direction == "legitimizing"]
     assert any("applicant tracking" in f.claim.lower() or "ats" in f.claim.lower() for f in ats)

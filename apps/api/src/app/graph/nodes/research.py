@@ -112,4 +112,4 @@ async def company_research(state: InvestigationState) -> dict:
             got_any = True
     if not got_any:
         unresolved.append("Could not retrieve independent web evidence about the company — research incomplete.")
-    return {"sources": sources, "cost_events": cost, "unresolved_questions": unresolved}
+    return {"raw_sources": sources, "cost_events": cost, "unresolved_questions": unresolved}

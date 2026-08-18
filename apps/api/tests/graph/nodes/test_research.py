@@ -21,8 +21,8 @@ async def test_company_research_summarizes_each_hit(monkeypatch):
     state = InvestigationState(submission=RawSubmission(job_text="x"),
                               entities=ExtractedEntities(company_name="Acme", company_domain="acme.com"))
     out = await research.company_research(state)
-    assert len(out["sources"]) >= 1
-    s = out["sources"][0]
+    assert len(out["raw_sources"]) >= 1
+    s = out["raw_sources"][0]
     assert s.kind in ("fetched_page", "search_result")
     assert "SaaS" in s.content_summary
     assert len(s.raw_excerpt) <= 2000  # bounded excerpt, never full HTML
@@ -83,4 +83,4 @@ async def test_off_target_hit_excluded_from_sources(monkeypatch):
     state = InvestigationState(submission=RawSubmission(job_text="x"),
                               entities=ExtractedEntities(company_name="Acme Global", company_domain="acmeglobal.com"))
     out = await research.company_research(state)
-    assert out["sources"] == []
+    assert out["raw_sources"] == []

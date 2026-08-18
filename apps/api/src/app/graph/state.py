@@ -57,8 +57,16 @@ class InvestigationState(BaseModel):
     submission: RawSubmission
     entities: ExtractedEntities = Field(default_factory=ExtractedEntities)
     sources: list[Source] = Field(default_factory=list)
+    # Pre-dedupe accumulators for the parallel fan-out branches (checks/research/
+    # crosspost). Additive so concurrent writers in the same superstep merge
+    # instead of conflicting (InvalidUpdateError) — mirrors cost_events below.
+    # evidence_assembly consumes these, assigns canonical IDs, and writes the
+    # final (replace-semantics) `sources`/`findings`. Never expose raw_* outside
+    # the graph (e.g. in API responses) — only the canonical fields are public.
+    raw_sources: Annotated[list[Source], operator.add] = Field(default_factory=list)
     deterministic_signals: dict = Field(default_factory=dict)
     findings: list[Finding] = Field(default_factory=list)
+    raw_findings: Annotated[list[Finding], operator.add] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     research_attempts: int = 0
     cost_events: Annotated[list[NodeUsage], operator.add] = Field(default_factory=list)

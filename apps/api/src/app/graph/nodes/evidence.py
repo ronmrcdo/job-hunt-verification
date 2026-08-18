@@ -1,12 +1,16 @@
 from app.graph.state import InvestigationState
 
 def evidence_assembly(state: InvestigationState) -> dict:
+    """Consolidates the fan-out branches' accumulated raw_sources/raw_findings
+    (additive-reducer channels, so concurrent branch writes don't conflict)
+    into the canonical, replace-semantics sources/findings the rest of the
+    graph (post-barrier) reads. Never exposes raw_* outside the graph."""
     id_map: dict[str, str] = {}          # old id -> canonical id
     url_to_canonical: dict[str, str] = {}
     canonical_sources = []
     counter = 1
 
-    for src in state.sources:
+    for src in state.sources + state.raw_sources:
         if src.id.startswith("src_det_"):        # already canonical deterministic source
             id_map[src.id] = src.id
             canonical_sources.append(src)
@@ -22,7 +26,7 @@ def evidence_assembly(state: InvestigationState) -> dict:
         canonical_sources.append(src.model_copy(update={"id": new_id}))
 
     remapped_findings = []
-    for f in state.findings:
+    for f in state.findings + state.raw_findings:
         new_ids = [id_map.get(sid, sid) for sid in f.source_ids]
         # collapse duplicates introduced by dedupe, preserve order
         seen, ordered = set(), []

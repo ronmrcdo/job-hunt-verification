@@ -28,7 +28,7 @@ def _emails(text: str) -> set[str]:
 async def job_crosspost_search(state: InvestigationState) -> dict:
     queries = build_crosspost_queries(state.entities)
     if not queries:
-        return {"sources": [], "findings": [], "cost_events": []}
+        return {"raw_sources": [], "raw_findings": [], "cost_events": []}
 
     own = _emails(state.submission.job_text) | _emails(state.entities.recruiter_email or "")
     sources: list[Source] = []
@@ -58,4 +58,4 @@ async def job_crosspost_search(state: InvestigationState) -> dict:
                     source_ids=[src.id],
                     provenance="web_verified",
                 ))
-    return {"sources": sources, "findings": findings, "cost_events": []}
+    return {"raw_sources": sources, "raw_findings": findings, "cost_events": []}

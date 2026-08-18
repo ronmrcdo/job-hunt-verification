@@ -51,4 +51,4 @@ async def deterministic_checks_node(state: InvestigationState) -> dict:
             claim=f"Company domain was registered {sig['domain_age_days']} days ago (very recent).",
             source_ids=["src_det_domain"], provenance="deterministic"))
 
-    return {"deterministic_signals": sig, "sources": sources, "findings": findings}
+    return {"deterministic_signals": sig, "raw_sources": sources, "raw_findings": findings}

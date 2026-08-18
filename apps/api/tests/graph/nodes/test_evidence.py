@@ -9,9 +9,9 @@ def _s(id_, url, summary="s"):
 def test_dedupes_and_assigns_canonical_ids():
     state = InvestigationState(
         submission=RawSubmission(job_text="x"),
-        sources=[_s("raw_1", "https://a"), _s("raw_2", "https://a"),  # dup url
+        raw_sources=[_s("raw_1", "https://a"), _s("raw_2", "https://a"),  # dup url
                  _s("src_det_domain", None, "det")],
-        findings=[Finding(id="f1", category="job", direction="suspicious", severity="low",
+        raw_findings=[Finding(id="f1", category="job", direction="suspicious", severity="low",
                           claim="c", source_ids=["raw_2"], provenance="web_verified")])
     out = evidence_assembly(state)
     ids = {s.id for s in out["sources"]}
@@ -26,8 +26,8 @@ def test_dedupes_and_assigns_canonical_ids():
 def test_multiple_findings_can_share_same_deterministic_source_id():
     state = InvestigationState(
         submission=RawSubmission(job_text="x"),
-        sources=[_s("src_det_domain", None, "det")],
-        findings=[
+        raw_sources=[_s("src_det_domain", None, "det")],
+        raw_findings=[
             Finding(id="f1", category="job", direction="suspicious", severity="low",
                     claim="c1", source_ids=["src_det_domain"], provenance="deterministic"),
             Finding(id="f2", category="domain", direction="suspicious", severity="medium",
@@ -44,8 +44,8 @@ def test_unknown_cited_source_id_is_kept_not_dropped():
     # provisional id) should not cause the finding to be silently dropped.
     state = InvestigationState(
         submission=RawSubmission(job_text="x"),
-        sources=[_s("raw_1", "https://a")],
-        findings=[Finding(id="f1", category="job", direction="suspicious", severity="low",
+        raw_sources=[_s("raw_1", "https://a")],
+        raw_findings=[Finding(id="f1", category="job", direction="suspicious", severity="low",
                           claim="c", source_ids=["raw_missing"], provenance="web_verified")])
     out = evidence_assembly(state)
     assert len(out["findings"]) == 1

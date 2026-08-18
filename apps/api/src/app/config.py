@@ -14,5 +14,7 @@ class Settings(BaseSettings):
 
     fetch_timeout_s: float = 10.0
     max_job_text_chars: int = 40_000
+    branch_timeout_s: float = 25.0
+    total_deadline_s: float = 90.0
 
 settings = Settings()

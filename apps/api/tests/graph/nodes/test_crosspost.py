@@ -15,7 +15,7 @@ async def test_contact_swap_flagged(monkeypatch):
         entities=ExtractedEntities(job_title="Engineer", company_name="Acme",
                                    recruiter_email="jo@acme.com"))
     out = await crosspost.job_crosspost_search(state)
-    swaps = [f for f in out["findings"] if "different contact" in f.claim.lower()]
+    swaps = [f for f in out["raw_findings"] if "different contact" in f.claim.lower()]
     assert swaps and swaps[0].direction == "suspicious"
 
 
@@ -30,4 +30,4 @@ async def test_multiboard_same_contact_not_flagged(monkeypatch):
         entities=ExtractedEntities(job_title="Engineer", company_name="Acme",
                                    recruiter_email="jo@acme.com"))
     out = await crosspost.job_crosspost_search(state)
-    assert not [f for f in out["findings"] if "different contact" in f.claim.lower()]
+    assert not [f for f in out["raw_findings"] if "different contact" in f.claim.lower()]
