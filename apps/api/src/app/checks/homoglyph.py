@@ -5,12 +5,22 @@ distance, punycode/IDN encoding, or the classic 'rn' -> 'm' substitution.
 Per spec §7/§9 this is a V0-blocking scam signal (e.g. `rnicrosoft.com`,
 `acme-globall.com`).
 """
+import tldextract
+
+# `_label` used to take `parts[-2]`, which is wrong for multi-part TLDs
+# (ccTLDs like .co.uk, .com.au, .co.nz): "acme-globall.co.uk" collapsed to
+# label "co", so the whole lookalike class was missed on those TLDs. Use
+# tldextract's registrable-label extraction (the part before the *public
+# suffix*, not just before the last dot) instead. `suffix_list_urls=()`
+# forces it to use the bundled offline PSL snapshot only — it never fetches
+# over the network (tests must run with no network access).
+_EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 
 
 def _label(domain: str) -> str:
-    # registrable label without the public suffix's TLD, lowercased
-    parts = domain.lower().rstrip(".").split(".")
-    return parts[-2] if len(parts) >= 2 else parts[0]
+    # registrable label without the public suffix (which may itself be
+    # multi-part, e.g. "co.uk"), lowercased
+    return _EXTRACT(domain.lower().rstrip(".")).domain
 
 
 def _levenshtein(a: str, b: str) -> int:
