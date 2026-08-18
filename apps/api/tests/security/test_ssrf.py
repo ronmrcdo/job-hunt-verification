@@ -21,6 +21,16 @@ def test_allows_public_url(monkeypatch):
     monkeypatch.setattr("app.security.ssrf._resolve", lambda h: ["93.184.216.34"])
     assert assert_public_url("https://example.com/jobs/123") is None
 
+def test_wraps_resolution_failure_as_ssrf_error(monkeypatch):
+    import socket
+
+    def _raise(h):
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr("app.security.ssrf._resolve", _raise)
+    with pytest.raises(SsrfError):
+        assert_public_url("https://nonexistent.invalid/")
+
 # helpers used only by the test
 def _is_ip(h):
     import ipaddress

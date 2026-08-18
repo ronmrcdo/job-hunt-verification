@@ -32,7 +32,10 @@ def resolve_public_ips(host: str) -> list[str]:
         addr = ipaddress.ip_address(host)
         ips = [str(addr)]
     except ValueError:
-        ips = _resolve(host)
+        try:
+            ips = _resolve(host)
+        except OSError as exc:
+            raise SsrfError(f"host did not resolve: {host}") from exc
     if not ips:
         raise SsrfError(f"host did not resolve: {host}")
     for ip in ips:
