@@ -40,3 +40,47 @@ async def test_failed_fetch_becomes_unresolved_not_crash(monkeypatch):
                               entities=ExtractedEntities(company_name="Acme"))
     out = await research.company_research(state)
     assert out["unresolved_questions"]  # research incomplete, recorded not raised
+
+@pytest.mark.asyncio
+async def test_summarization_prompt_threads_target_company_identity(monkeypatch):
+    # spec §7: the model can only disambiguate a same-named-but-different
+    # company if it's told which company is under investigation.
+    async def fake_search(query, *, max_results=5):
+        return [SearchHit(title="Acme Careers", url="https://acme.com/jobs", content="hiring")]
+    async def fake_fetch(url, *, max_bytes=2_000_000):
+        return FetchResult(url=url, ok=True, status=200, text="Acme is a real SaaS company.")
+    seen = {}
+    async def fake_call(model, schema, messages, *, node):
+        seen["messages"] = messages
+        return schema(summary="Acme appears to be an established SaaS company.",
+                      relevant=True), NodeUsage(node=node, model="cheap", usd=0.001)
+    monkeypatch.setattr(research, "tavily_search", fake_search)
+    monkeypatch.setattr(research, "safe_fetch", fake_fetch)
+    monkeypatch.setattr(research, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+                              entities=ExtractedEntities(company_name="Acme Global", company_domain="acmeglobal.com"))
+    await research.company_research(state)
+    user_text = next(text for role, text in seen["messages"] if role == "user")
+    assert "Acme Global" in user_text
+    assert "acmeglobal.com" in user_text
+
+@pytest.mark.asyncio
+async def test_off_target_hit_excluded_from_sources(monkeypatch):
+    # A same-named-but-different company (disambiguation gate) must be
+    # excluded from returned sources, not mistaken for verification.
+    async def fake_search(query, *, max_results=5):
+        return [SearchHit(title="Acme Global (unrelated)", url="https://acme-global.example/about", content="hi")]
+    async def fake_fetch(url, *, max_bytes=2_000_000):
+        return FetchResult(url=url, ok=True, status=200, text="Acme Global is a bakery in a different country.")
+    async def fake_call(model, schema, messages, *, node):
+        return schema(summary="This page describes an unrelated bakery, not the target company.",
+                      relevant=False), NodeUsage(node=node, model="cheap", usd=0.001)
+    monkeypatch.setattr(research, "tavily_search", fake_search)
+    monkeypatch.setattr(research, "safe_fetch", fake_fetch)
+    monkeypatch.setattr(research, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+                              entities=ExtractedEntities(company_name="Acme Global", company_domain="acmeglobal.com"))
+    out = await research.company_research(state)
+    assert out["sources"] == []
