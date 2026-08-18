@@ -1,0 +1,11 @@
+{
+  "name": "job-hunt-verification",
+  "private": true,
+  "scripts": {
+    "gen:types": "node scripts/gen-types.mjs",
+    "check:types-stale": "pnpm gen:types && git diff --exit-code -- packages/api-types/index.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0"
+  }
+}
