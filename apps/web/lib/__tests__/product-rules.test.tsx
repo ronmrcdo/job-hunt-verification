@@ -1,10 +1,35 @@
 // Product-rule guardrail suite (Task 2.6). Locks the report adapter's
 // data-layer guarantees against the fixtures, independent of any rendered
-// component. Phase 3 extends this file to the rendered report tree.
-import { describe, it, expect } from "vitest";
+// component. Task 3.6 extends this file to the assembled, rendered report
+// tree (full-tree assertions, not just the VM).
+import { describe, it, expect, vi } from "vitest";
+import { render } from "@testing-library/react";
 import { toReportViewModel } from "../report-view-model";
 import { SAMPLE_HIGH } from "../__fixtures__/sample-high";
 import { SAMPLE_LOW } from "../__fixtures__/sample-low";
+import { FlowProvider } from "../flow-context";
+import { BandBanner } from "../../components/report/BandBanner";
+import { ConfidencePanel } from "../../components/report/ConfidencePanel";
+import { FindingGroup } from "../../components/report/FindingGroup";
+import { VerifyChecklist } from "../../components/report/VerifyChecklist";
+import { ReportFooter } from "../../components/report/ReportFooter";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
+function renderAssembledReport(vm: ReturnType<typeof toReportViewModel>) {
+  return render(
+    <FlowProvider>
+      <BandBanner vm={vm} confidenceSlot={<ConfidencePanel vm={vm} />} />
+      {vm.groups.map((group) => (
+        <FindingGroup key={group.key} group={group} />
+      ))}
+      <VerifyChecklist items={vm.verifyChecklist} />
+      <ReportFooter vm={vm} onReport={() => {}} reported={false} />
+    </FlowProvider>,
+  );
+}
 
 describe("product rules: band vs. confidence vs. score", () => {
   it("HIGH vm's band is one of the four literals, with no numeric-score field anywhere on the VM", () => {
@@ -139,5 +164,76 @@ describe("product rules: source label falls back to kind when there is no URL", 
     expect(allSources.some((s) => s.name === "mail records")).toBe(true);
     // s-hi-07 (user_provided, url:null) is attached to F-04.
     expect(allSources.some((s) => s.name === "conversation you shared")).toBe(true);
+  });
+});
+
+describe("product rules (rendered tree, Task 3.6): no <a href> anywhere in the assembled report", () => {
+  it.each([
+    ["HIGH", SAMPLE_HIGH],
+    ["LOW", SAMPLE_LOW],
+  ])("%s report has zero <a href> in the whole rendered document", (_label, sample) => {
+    const vm = toReportViewModel(sample.inv, sample.submitted);
+    const { container } = renderAssembledReport(vm);
+
+    expect(container.querySelector("a[href]")).toBeNull();
+  });
+});
+
+describe("product rules (rendered tree, Task 3.6): band, never a numeric grade", () => {
+  it.each([
+    ["HIGH", SAMPLE_HIGH],
+    ["LOW", SAMPLE_LOW],
+  ])("%s report renders no numeric-grade text and no 'score' word", (_label, sample) => {
+    const vm = toReportViewModel(sample.inv, sample.submitted);
+    const { container } = renderAssembledReport(vm);
+
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/\b\d{1,3}\s*\/\s*100\b/);
+    expect(text).not.toMatch(/score/i);
+  });
+});
+
+describe("product rules (rendered tree, Task 3.6): provenance label count", () => {
+  it("HIGH report renders exactly one provenance label; LOW renders zero", () => {
+    const highVm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const { container: highContainer } = renderAssembledReport(highVm);
+    const provenanceText = "Based on the conversation you shared — we can't independently verify it.";
+    const highMatches = Array.from(highContainer.querySelectorAll("div")).filter(
+      (el) => el.textContent === provenanceText,
+    );
+    expect(highMatches).toHaveLength(1);
+
+    const lowVm = toReportViewModel(SAMPLE_LOW.inv, SAMPLE_LOW.submitted);
+    const { container: lowContainer } = renderAssembledReport(lowVm);
+    const lowMatches = Array.from(lowContainer.querySelectorAll("div")).filter(
+      (el) => el.textContent === provenanceText,
+    );
+    expect(lowMatches).toHaveLength(0);
+  });
+});
+
+describe("product rules (rendered tree, Task 3.6): unverifiable markers are neutral, not alarming", () => {
+  // Rule #6 neutrality is enforced at the row level (data-row-tone="neutral"
+  // -> --color-neutral-row), not the small severity-marker dot: FindingCard
+  // deliberately lets severity (critical/high/medium) win the dot color even
+  // on an unverifiable-direction finding (see FindingCard.tsx's
+  // severityMarker doc comment), so a medium-severity unverifiable finding's
+  // dot can be the suspicious color — the row background is what must never
+  // read as an alarm.
+  it("every unverifiable FindingCard row carries data-row-tone=neutral with the neutral-row background, never critical/alarm", () => {
+    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const { container } = renderAssembledReport(vm);
+
+    const unverifiableFindingIds = new Set(
+      vm.groups.find((g) => g.key === "unverifiable")!.findings.map((f) => f.recordId),
+    );
+    expect(unverifiableFindingIds.size).toBeGreaterThan(0);
+
+    const rows = container.querySelectorAll('[data-row-tone="neutral"]');
+    expect(rows.length).toBe(unverifiableFindingIds.size);
+    for (const row of rows) {
+      expect((row as HTMLElement).style.background).toBe("var(--color-neutral-row)");
+      expect(row.getAttribute("data-row-tone")).not.toBe("critical");
+    }
   });
 });
