@@ -1,0 +1,77 @@
+# .github/workflows/ci.yml
+name: ci
+on: [push, pull_request]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      types: ${{ steps.filter.outputs.types }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+            web:
+              - 'apps/web/**'
+            types:
+              - 'apps/api/**'
+              - 'packages/api-types/**'
+
+  api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: cd apps/api && uv sync
+      # NOTE ON DB TESTS: this repo's DB integration tests (tests/test_db.py,
+      # tests/test_cache.py, tests/test_api.py, tests/graph/test_build.py) are
+      # gated behind JHV_TEST_DATABASE_URL and pytest.skip() when it is unset
+      # (see Task 5.7). Running the FULL suite in one pytest process WITH that
+      # var set HANGS — a confirmed pre-existing db._pool cross-module
+      # connection-pool interaction. Do NOT "fix" this by setting
+      # JHV_TEST_DATABASE_URL here and running a single `uv run pytest` over
+      # the whole repo; that reintroduces the hang. This job intentionally
+      # leaves JHV_TEST_DATABASE_URL unset — no Postgres service is needed —
+      # so the DB tests skip and the ~142 unit/logic tests (incl. the stubbed
+      # eval harness) run fast and deterministically. If DB tests ever need to
+      # run in CI, invoke each gated module in its OWN pytest process (e.g.
+      # `pytest tests/test_db.py`, then a separate `pytest tests/test_cache.py`,
+      # etc.) — never all together.
+      - run: cd apps/api && uv run pytest -q
+        env:
+          CHEAP_MODEL: stub-model
+          STRONG_MODEL: stub-model
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install
+      - run: cd apps/web && pnpm vitest run
+
+  types:
+    needs: changes
+    if: needs.changes.outputs.types == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install && cd apps/api && uv sync && cd ../..
+      - run: pnpm gen:types
+      - run: git diff --exit-code -- packages/api-types/index.ts || (echo "api-types is stale — run 'pnpm gen:types' and commit the result"; exit 1)
