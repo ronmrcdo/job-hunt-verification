@@ -2,12 +2,20 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { BandBanner } from "../BandBanner";
 import { toReportViewModel } from "../../../lib/report-view-model";
+import type { CompleteReportVM } from "../../../lib/report-view-model";
 import { SAMPLE_HIGH } from "../../../lib/__fixtures__/sample-high";
 import { SAMPLE_LOW } from "../../../lib/__fixtures__/sample-low";
+import type { Investigation } from "../../../lib/investigations";
+
+// Every fixture here (SAMPLE_HIGH/SAMPLE_LOW) carries a real assessment, so
+// the report is always complete — this cast is honest for that reason.
+function completeVM(inv: Investigation): CompleteReportVM {
+  return toReportViewModel(inv) as CompleteReportVM;
+}
 
 describe("BandBanner", () => {
   it("renders the HIGH band with 3 of 4 segments filled in the band-high color", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = completeVM(SAMPLE_HIGH.inv);
     const { container } = render(<BandBanner vm={vm} />);
 
     expect(screen.getByText("HIGH RISK")).toBeTruthy();
@@ -27,7 +35,7 @@ describe("BandBanner", () => {
   });
 
   it("renders the LOW band with 1 of 4 segments filled in the band-low color", () => {
-    const vm = toReportViewModel(SAMPLE_LOW.inv, SAMPLE_LOW.submitted);
+    const vm = completeVM(SAMPLE_LOW.inv);
     const { container } = render(<BandBanner vm={vm} />);
 
     expect(screen.getByText("LOW RISK")).toBeTruthy();
@@ -44,7 +52,7 @@ describe("BandBanner", () => {
   });
 
   it("renders the confidenceSlot in the banner", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = completeVM(SAMPLE_HIGH.inv);
     render(<BandBanner vm={vm} confidenceSlot={<div data-testid="confidence-slot">slot</div>} />);
     expect(screen.getByTestId("confidence-slot")).toBeTruthy();
   });

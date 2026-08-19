@@ -17,12 +17,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Submitted } from "./report-view-model";
 
 const STORAGE_KEY = "jhv_flow";
 
-export type AuthMode = "signin" | "create";
-
+// Pre-auth draft only: the pasted posting + optional details a visitor fills
+// in before signing in. Auth state (signedIn/authEmail/authMode) and
+// fetchError (ephemeral scan-field UI state) no longer live here — auth is
+// now driven by Supabase session, not flow state.
 export interface FlowState {
   jobInput: string;
   company: string;
@@ -30,10 +31,6 @@ export interface FlowState {
   recruiter: string;
   email: string;
   convo: string;
-  signedIn: boolean;
-  authEmail: string;
-  authMode: AuthMode;
-  fetchError: boolean;
 }
 
 const defaultState: FlowState = {
@@ -43,15 +40,10 @@ const defaultState: FlowState = {
   recruiter: "",
   email: "",
   convo: "",
-  signedIn: false,
-  authEmail: "",
-  authMode: "signin",
-  fetchError: false,
 };
 
-// Keys allowed to survive a reload (persisted to sessionStorage). Notably
-// excludes authMode/fetchError (ephemeral UI state) and, always, any
-// password field (which doesn't exist on FlowState at all).
+// Keys allowed to survive a reload (persisted to sessionStorage), and,
+// always, any password field (which doesn't exist on FlowState at all).
 const SURVIVABLE_KEYS = [
   "jobInput",
   "company",
@@ -59,8 +51,6 @@ const SURVIVABLE_KEYS = [
   "recruiter",
   "email",
   "convo",
-  "signedIn",
-  "authEmail",
 ] as const satisfies readonly (keyof FlowState)[];
 
 type SurvivableState = Pick<FlowState, (typeof SURVIVABLE_KEYS)[number]>;
@@ -106,7 +96,6 @@ interface FlowContextValue {
   state: FlowState;
   set: (patch: Partial<FlowState>) => void;
   reset: () => void;
-  submitted: Submitted;
 }
 
 const FlowContext = createContext<FlowContextValue | null>(null);
@@ -138,21 +127,9 @@ export function FlowProvider({ children }: { children: ReactNode }) {
     setState(defaultState);
   }, []);
 
-  const submitted = useMemo<Submitted>(() => {
-    // contactChannel holds a messaging platform (e.g. "Telegram"), not the
-    // company-website URL stored in `site` — no flow field sources it yet,
-    // so (like jobTitle) it's left unmapped in V0 rather than populated
-    // with the wrong kind of value.
-    const out: Submitted = {};
-    if (state.company) out.company = state.company;
-    if (state.recruiter) out.recruiter = state.recruiter;
-    if (state.email) out.email = state.email;
-    return out;
-  }, [state.company, state.recruiter, state.email]);
-
   const value = useMemo<FlowContextValue>(
-    () => ({ state, set, reset, submitted }),
-    [state, set, reset, submitted],
+    () => ({ state, set, reset }),
+    [state, set, reset],
   );
 
   return <FlowContext.Provider value={value}>{children}</FlowContext.Provider>;
@@ -164,4 +141,11 @@ export function useFlow(): FlowContextValue {
     throw new Error("useFlow must be used within a FlowProvider");
   }
   return ctx;
+}
+
+// Non-throwing variant for components (e.g. NewCheckForm) that opportunistically
+// read the draft when a FlowProvider happens to be mounted above them, but must
+// still render standalone (e.g. in unit tests, or outside the app shell).
+export function useFlowOptional(): FlowContextValue | null {
+  return useContext(FlowContext);
 }

@@ -3,14 +3,31 @@
 // Sticky header shared across the landing, auth, and details screens.
 // Rule #4 (suspicious URLs are never links) doesn't apply here — every
 // link is internal site navigation, not attacker-controlled content.
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "../ui/Button";
-import { useFlow } from "../../lib/flow-context";
+import { createClient } from "../../lib/supabase/client";
 
 export function SiteHeader() {
-  const { state } = useFlow();
   const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) setEmail(data.session?.user?.email ?? null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function onSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setEmail(null);
+    router.push("/");
+  }
 
   return (
     <>
@@ -45,8 +62,17 @@ export function SiteHeader() {
             <Link href="/#risk-bands" className="text-[12px] uppercase tracking-[0.1em] text-secondary">
               Risk bands
             </Link>
-            {state.signedIn ? (
-              <span className="font-mono text-[13px] text-muted">{state.authEmail}</span>
+            {email ? (
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[13px] text-muted">{email}</span>
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="text-[12px] uppercase tracking-[0.1em] text-secondary"
+                >
+                  Sign out
+                </button>
+              </div>
             ) : (
               <Link href="/sign-in" className="text-[12px] uppercase tracking-[0.1em] text-secondary">
                 Sign in

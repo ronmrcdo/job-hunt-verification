@@ -1,52 +1,52 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+const signInWithPassword = vi.fn().mockResolvedValue({ data: {}, error: null });
+const signUp = vi.fn().mockResolvedValue({ data: {}, error: null });
+const signInWithOAuth = vi.fn().mockResolvedValue({ data: {}, error: null });
+vi.mock("../../../lib/supabase/client", () => ({
+  createClient: () => ({ auth: { signInWithPassword, signUp, signInWithOAuth } }),
+}));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+
 import { AuthForm } from "../AuthForm";
 
-function fillFields(email: string, password: string) {
-  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: email } });
-  fireEvent.change(screen.getByLabelText(/password/i), { target: { value: password } });
-}
+beforeEach(() => vi.clearAllMocks());
 
 describe("AuthForm", () => {
-  it("shows the validation panel and does not call onSuccess when the password is too short", () => {
-    const onSuccess = vi.fn();
-    render(<AuthForm onSuccess={onSuccess} />);
-
-    fillFields("a@b.com", "1234");
-    fireEvent.click(screen.getByRole("button", { name: "SIGN IN AND RUN THE CHECK" }));
-
-    expect(
-      screen.getByText("Enter an email and a password of at least 8 characters to continue."),
-    ).toBeTruthy();
-    expect(onSuccess).not.toHaveBeenCalled();
+  it("blocks submit and shows a message when password < 8 chars", async () => {
+    render(<AuthForm />);
+    await userEvent.type(screen.getByLabelText(/email/i), "a@b.com");
+    await userEvent.type(screen.getByLabelText(/password/i), "short");
+    await userEvent.click(screen.getByRole("button", { name: /sign in and run/i }));
+    expect(signInWithPassword).not.toHaveBeenCalled();
+    expect(screen.getByText(/at least 8 characters/i)).toBeInTheDocument();
   });
 
-  it("calls onSuccess with the email on a valid submit", () => {
-    const onSuccess = vi.fn();
-    render(<AuthForm onSuccess={onSuccess} />);
-
-    fillFields("a@b.com", "longenough1");
-    fireEvent.click(screen.getByRole("button", { name: "SIGN IN AND RUN THE CHECK" }));
-
-    expect(onSuccess).toHaveBeenCalledWith("a@b.com", "signin");
+  it("calls signInWithPassword with valid credentials", async () => {
+    render(<AuthForm />);
+    await userEvent.type(screen.getByLabelText(/email/i), "a@b.com");
+    await userEvent.type(screen.getByLabelText(/password/i), "12345678");
+    await userEvent.click(screen.getByRole("button", { name: /sign in and run/i }));
+    expect(signInWithPassword).toHaveBeenCalledWith({ email: "a@b.com", password: "12345678" });
   });
 
-  it("switches the CTA to CREATE ACCOUNT AND RUN THE CHECK when toggled to Create account", () => {
-    render(<AuthForm onSuccess={vi.fn()} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
-
-    expect(screen.getByRole("button", { name: "CREATE ACCOUNT AND RUN THE CHECK" })).toBeTruthy();
+  it("shows the auth error message when Supabase rejects", async () => {
+    signInWithPassword.mockResolvedValueOnce({ data: {}, error: { message: "Invalid login credentials" } });
+    render(<AuthForm />);
+    await userEvent.type(screen.getByLabelText(/email/i), "a@b.com");
+    await userEvent.type(screen.getByLabelText(/password/i), "12345678");
+    await userEvent.click(screen.getByRole("button", { name: /sign in and run/i }));
+    expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
   });
 
-  it("calls onSuccess with mode 'create' after toggling to Create account and submitting valid fields", () => {
-    const onSuccess = vi.fn();
-    render(<AuthForm onSuccess={onSuccess} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
-    fillFields("new@b.com", "longenough1");
-    fireEvent.click(screen.getByRole("button", { name: "CREATE ACCOUNT AND RUN THE CHECK" }));
-
-    expect(onSuccess).toHaveBeenCalledWith("new@b.com", "create");
+  it("triggers Google OAuth from the Google button", async () => {
+    render(<AuthForm />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+    expect(signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google" }),
+    );
   });
 });

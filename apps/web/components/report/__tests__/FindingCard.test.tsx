@@ -6,7 +6,7 @@ import { SAMPLE_HIGH } from "../../../lib/__fixtures__/sample-high";
 import type { FindingVM } from "../../../lib/report-view-model";
 
 function findingsById(): Map<string, FindingVM> {
-  const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+  const vm = toReportViewModel(SAMPLE_HIGH.inv);
   const all = vm.groups.flatMap((g) => g.findings);
   return new Map(all.map((f) => [f.recordId, f]));
 }

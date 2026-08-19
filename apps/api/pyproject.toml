@@ -16,6 +16,7 @@ dependencies = [
   "dnspython>=2.6",
   "tavily-python>=0.5",
   "tldextract>=5.3.2",
+  "inngest>=0.5",
 ]
 
 [dependency-groups]

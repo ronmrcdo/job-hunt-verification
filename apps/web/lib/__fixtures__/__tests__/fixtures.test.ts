@@ -4,7 +4,7 @@ import { SAMPLE_LOW } from "../sample-low";
 
 describe("SAMPLE_HIGH fixture", () => {
   it("has 7 findings split 2 legitimizing / 3 suspicious / 2 unverifiable", () => {
-    const findings = SAMPLE_HIGH.inv.findings;
+    const findings = SAMPLE_HIGH.inv.findings!;
     expect(findings).toHaveLength(7);
     expect(findings.filter((f) => f.direction === "legitimizing")).toHaveLength(2);
     expect(findings.filter((f) => f.direction === "suspicious")).toHaveLength(3);
@@ -12,14 +12,14 @@ describe("SAMPLE_HIGH fixture", () => {
   });
 
   it("has exactly one user_provided_unverified finding at critical severity", () => {
-    const matches = SAMPLE_HIGH.inv.findings.filter(
+    const matches = SAMPLE_HIGH.inv.findings!.filter(
       (f) => f.provenance === "user_provided_unverified" && f.severity === "critical",
     );
     expect(matches).toHaveLength(1);
   });
 
   it("has exactly one finding whose mitigation mentions Cross-posting", () => {
-    const matches = SAMPLE_HIGH.inv.findings.filter(
+    const matches = SAMPLE_HIGH.inv.findings!.filter(
       (f) => f.mitigation && f.mitigation.includes("Cross-posting"),
     );
     expect(matches).toHaveLength(1);
@@ -40,7 +40,7 @@ describe("SAMPLE_HIGH fixture", () => {
 
 describe("SAMPLE_LOW fixture", () => {
   it("has 5 findings with zero suspicious", () => {
-    const findings = SAMPLE_LOW.inv.findings;
+    const findings = SAMPLE_LOW.inv.findings!;
     expect(findings).toHaveLength(5);
     expect(findings.filter((f) => f.direction === "suspicious")).toHaveLength(0);
   });

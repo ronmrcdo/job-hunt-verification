@@ -9,6 +9,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
 
+vi.mock("../../lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+    },
+  }),
+}));
+
 beforeEach(() => {
   window.sessionStorage.clear();
   push.mockClear();

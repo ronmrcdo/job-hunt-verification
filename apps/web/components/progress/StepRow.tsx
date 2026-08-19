@@ -7,12 +7,17 @@
 import { useMemo, type CSSProperties } from "react";
 import { motion } from "framer-motion";
 import { useMotion } from "../../lib/motion";
-import type { ProgressStep } from "./progress-script";
 
-export type StepRowState = "done" | "soft" | "running" | "queued";
+export type StepRowState = "done" | "soft" | "running" | "queued" | "failed";
+
+export interface StepRowStep {
+  title: string;
+  note?: string;
+  runningNote?: string;
+}
 
 export interface StepRowProps {
-  step: ProgressStep;
+  step: StepRowStep;
   state: StepRowState;
 }
 
@@ -21,6 +26,7 @@ const RIGHT_LABEL: Record<StepRowState, string> = {
   soft: "Soft close",
   running: "Open",
   queued: "Queued",
+  failed: "Failed",
 };
 
 function statusSquareStyle(state: StepRowState): CSSProperties {
@@ -33,6 +39,8 @@ function statusSquareStyle(state: StepRowState): CSSProperties {
       return { background: "var(--color-page)", border: "1px solid var(--color-ink)" };
     case "queued":
       return { background: "var(--color-page)", border: "1px solid var(--color-rule)" };
+    case "failed":
+      return { background: "var(--color-page)", border: "1px solid var(--color-critical)" };
   }
 }
 
@@ -50,7 +58,12 @@ export function StepRow({ step, state }: StepRowProps) {
   // first renders in a done/soft state rather than recomputed every render.
   const timestamp = useMemo(() => formatTimestamp(), []);
 
-  const col1 = state === "done" || state === "soft" ? timestamp : state === "running" ? "running" : "queued";
+  const col1 =
+    state === "done" || state === "soft" || state === "failed"
+      ? timestamp
+      : state === "running"
+        ? "running"
+        : "queued";
   const note = state === "running" && step.runningNote ? step.runningNote : step.note;
   const showNote = state === "done" || state === "soft" || state === "running";
 
@@ -71,7 +84,14 @@ export function StepRow({ step, state }: StepRowProps) {
       </div>
       <div
         className="pt-[3px] text-right text-[11px] uppercase tracking-[0.1em]"
-        style={{ color: state === "soft" ? "var(--color-suspicious)" : undefined }}
+        style={{
+          color:
+            state === "soft"
+              ? "var(--color-suspicious)"
+              : state === "failed"
+                ? "var(--color-critical)"
+                : undefined,
+        }}
       >
         {RIGHT_LABEL[state]}
       </div>

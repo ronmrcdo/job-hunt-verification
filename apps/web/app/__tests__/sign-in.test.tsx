@@ -1,19 +1,38 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import Page from "../sign-in/page";
 import { FlowProvider } from "../../lib/flow-context";
 
 const push = vi.fn();
 
+// Page is now an async server component that checks the session before
+// rendering (task 3.1) — mock an anonymous visitor so it renders the form
+// instead of redirecting to /verify.
+const { getUser } = vi.hoisted(() => ({ getUser: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
+  redirect: vi.fn(),
 }));
+vi.mock("../../lib/supabase/server", () => ({
+  createClient: async () => ({ auth: { getUser } }),
+}));
+vi.mock("../../lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+    },
+  }),
+}));
+
+import Page from "../sign-in/page";
 
 const STORAGE_KEY = "jhv_flow";
 
 beforeEach(() => {
   window.sessionStorage.clear();
   push.mockClear();
+  getUser.mockReset();
+  getUser.mockResolvedValue({ data: { user: null } });
 });
 
 describe("Sign-in page", () => {
@@ -25,7 +44,7 @@ describe("Sign-in page", () => {
 
     render(
       <FlowProvider>
-        <Page />
+        {await Page()}
       </FlowProvider>,
     );
 
@@ -36,7 +55,7 @@ describe("Sign-in page", () => {
   it("renders the STEP 2 OF 3 micro label and the H1", async () => {
     render(
       <FlowProvider>
-        <Page />
+        {await Page()}
       </FlowProvider>,
     );
 

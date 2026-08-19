@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 function renderFooter(onReport = vi.fn()) {
-  const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+  const vm = toReportViewModel(SAMPLE_HIGH.inv);
   return render(
     <FlowProvider>
       <ReportFooter vm={vm} onReport={onReport} reported={false} />

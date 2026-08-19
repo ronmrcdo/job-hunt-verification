@@ -1,4 +1,4 @@
-import type { Investigation } from "../api";
+import type { Investigation } from "../investigations";
 
 // Transcribed verbatim from the design handoff prototype's HIGH_FINDINGS /
 // HIGH_CHECKS / summary (band === 'HIGH') data, found in:
@@ -20,17 +20,17 @@ import type { Investigation } from "../api";
 //     mitigation being unique overall — F-03's `however` is the only one that does.
 export const SAMPLE_HIGH: {
   inv: Investigation;
-  submitted: {
-    jobTitle: string;
-    company: string;
-    recruiter: string;
-    contactChannel: string;
-    email: string;
-  };
 } = {
   inv: {
     id: "4f2c1180-0000-4000-8000-000000000001",
-    status: "complete",
+    user_id: "9e7c5c9a-0000-4000-8000-0000000000aa",
+    status: "done",
+    created_at: "2026-08-18T09:41:00Z",
+    submission: {
+      job_text: "Virtual Assistant, $2,500/month",
+      company_name: "Acme Global",
+      recruiter_email: "acmeglobalcareers@gmail.com",
+    },
     assessment: {
       band: "HIGH",
       confidence: "MODERATE",
@@ -237,12 +237,5 @@ export const SAMPLE_HIGH: {
           "Note that third-party recruiters legitimately post roles that never appear there, so this on its own is not a suspicious signal.",
       },
     ],
-  },
-  submitted: {
-    jobTitle: "Virtual Assistant, $2,500/month",
-    company: "Acme Global",
-    recruiter: "John Smith · Telegram",
-    contactChannel: "Telegram",
-    email: "acmeglobalcareers@gmail.com",
   },
 };

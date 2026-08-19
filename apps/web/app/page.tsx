@@ -46,20 +46,12 @@ export default function Page() {
 
   function onStart() {
     set({ jobInput: value });
-    if (!state.signedIn) {
-      router.push("/sign-in");
-    } else {
-      router.push("/check/new");
-    }
+    router.push("/sign-in");
   }
 
   function onFillSample() {
     setValue(SAMPLE_POSTING);
     set({ jobInput: SAMPLE_POSTING });
-  }
-
-  function onPasteInstead() {
-    set({ fetchError: false });
   }
 
   function onClosingScan() {
@@ -132,8 +124,7 @@ export default function Page() {
                 onChange={setValue}
                 detection={detection}
                 prior={value.includes(PRIOR_CHECK_DOMAIN)}
-                fetchError={state.fetchError}
-                onPasteInstead={onPasteInstead}
+                onPasteInstead={() => {}}
               />
               <div className="flex flex-wrap gap-[10px] pt-1">
                 <div className="flex flex-1 items-stretch border border-ink" style={{ flexBasis: "300px" }}>
@@ -149,9 +140,7 @@ export default function Page() {
                 </Button>
               </div>
               <div className="text-[13px] text-muted">
-                {state.signedIn
-                  ? `Signed in as ${state.authEmail || "you@example.com"} — your report is saved to your account.`
-                  : "You’ll be asked to sign in before the check runs, so the report stays private to you."}
+                You&rsquo;ll be asked to sign in before the check runs, so the report stays private to you.
               </div>
             </motion.div>
           </div>

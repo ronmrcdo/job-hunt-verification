@@ -4,7 +4,15 @@ import { FindingCard } from "../../components/report/FindingCard";
 import { BandBanner } from "../../components/report/BandBanner";
 import { Button } from "../../components/ui/Button";
 import { toReportViewModel } from "../../lib/report-view-model";
+import type { CompleteReportVM } from "../../lib/report-view-model";
 import { SAMPLE_HIGH } from "../../lib/__fixtures__/sample-high";
+import type { Investigation } from "../../lib/investigations";
+
+// SAMPLE_HIGH carries a real assessment, so the report is always complete —
+// this cast is honest for that reason, not a workaround.
+function completeVM(inv: Investigation): CompleteReportVM {
+  return toReportViewModel(inv) as CompleteReportVM;
+}
 
 // Task 6.1: mobile (<=430px) structural affordances. jsdom has no real
 // layout engine, so these assert the stable data-hooks the max-[430px]:
@@ -13,7 +21,7 @@ import { SAMPLE_HIGH } from "../../lib/__fixtures__/sample-high";
 
 describe("mobile affordances", () => {
   it("FindingCard exposes a data-mobile-hide-recordid hook on the record-id cell", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const finding = vm.groups.flatMap((g) => g.findings)[0];
     const { container } = render(<FindingCard finding={finding} />);
 
@@ -26,7 +34,7 @@ describe("mobile affordances", () => {
   });
 
   it("BandBanner marks the confidence node with data-mobile-order=above", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = completeVM(SAMPLE_HIGH.inv);
     const { container } = render(
       <BandBanner vm={vm} confidenceSlot={<div data-testid="confidence-slot">slot</div>} />
     );

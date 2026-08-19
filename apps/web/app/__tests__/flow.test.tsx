@@ -1,22 +1,22 @@
-import { Suspense } from "react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import LandingPage from "../page";
 import SignInPage from "../sign-in/page";
-import DetailsPage from "../check/new/page";
-import RunningPage from "../check/running/page";
-import ReportPage from "../report/[id]/page";
 import { FlowProvider } from "../../lib/flow-context";
-import { SAMPLE_HIGH } from "../../lib/__fixtures__/sample-high";
 
-// End-to-end transition test for the README "State model":
-// start (signed-out) -> auth gate holding the pasted input -> details ->
-// progress -> report; then "Check another posting" resets flow and returns
-// to `/`.
+// Draft-carry test for the README "State model": the landing page no longer
+// knows about auth state (that moved to real Supabase sessions, see the
+// SiteHeader/AuthForm/middleware in Task 6) — it just writes the pasted
+// posting into flow state and routes to `/sign-in`, which reads it back out
+// on the other side. The rest of the authenticated flow (sign-in ->
+// `/verify` -> `/investigations/:id`) is covered by its own suites:
+// components/auth/__tests__ (Task 6), components/verify/__tests__ +
+// lib/__tests__/flow-context.test.tsx (this task), and Task 8's
+// InvestigationView suite — not re-tested here.
 //
 // Real Next routing doesn't run in jsdom, so navigation is simulated: a
-// shared `push` mock stands in for next/navigation's router, and each hop
-// unmounts the current screen and renders the next one inside its own
+// shared `push` mock stands in for next/navigation's router, and the hop
+// unmounts the landing screen and renders sign-in inside its own
 // `<FlowProvider>` — exactly as the app does per-route. Each screen's
 // FlowProvider re-hydrates its (sessionStorage-backed) survivable flow
 // state on mount, so state set on one screen is visible to the next, the
@@ -24,27 +24,23 @@ import { SAMPLE_HIGH } from "../../lib/__fixtures__/sample-high";
 
 const push = vi.fn();
 
+// SignInPage is now an async server component that guards on session state
+// (task 3.1) — mock an anonymous visitor so it renders the form here.
+const { getUser } = vi.hoisted(() => ({ getUser: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
-  // AuthForm's "Back to the posting" link uses next/link, which is fine
-  // unmocked in jsdom, but AuthForm also imports it directly — no mock
-  // needed here beyond useRouter.
+  redirect: vi.fn(),
 }));
-
-const createInvestigation = vi.fn();
-const fetchInvestigation = vi.fn();
-
-vi.mock("../../lib/api", async () => {
-  const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
-  return {
-    ...actual,
-    createInvestigation: (...args: unknown[]) => createInvestigation(...args),
-    fetchInvestigation: (...args: unknown[]) => fetchInvestigation(...args),
-  };
-});
-
-vi.mock("../../lib/ownerKey", () => ({
-  getOwnerKey: () => "test-owner-key",
+vi.mock("../../lib/supabase/server", () => ({
+  createClient: async () => ({ auth: { getUser } }),
+}));
+vi.mock("../../lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+    },
+  }),
 }));
 
 const STORAGE_KEY = "jhv_flow";
@@ -54,13 +50,13 @@ const PASTED_POSTING = "Virtual Assistant, $2,500/month, immediate start, no exp
 beforeEach(() => {
   window.sessionStorage.clear();
   push.mockClear();
-  createInvestigation.mockReset();
-  fetchInvestigation.mockReset();
+  getUser.mockReset();
+  getUser.mockResolvedValue({ data: { user: null } });
 });
 
-describe("end-to-end flow: paste -> sign-in -> details -> progress -> report -> reset", () => {
-  it("carries flow state through every hop and resets on 'CHECK ANOTHER POSTING'", async () => {
-    // --- 1. LANDING (signed-out): paste, START, expect /sign-in ---
+describe("draft-carry flow: paste -> sign-in", () => {
+  it("carries the pasted posting from the landing page into flow state and routes to /sign-in", async () => {
+    // --- 1. LANDING: paste, START, expect /sign-in ---
     const landing = render(
       <FlowProvider>
         <LandingPage />
@@ -72,84 +68,22 @@ describe("end-to-end flow: paste -> sign-in -> details -> progress -> report -> 
     fireEvent.click(screen.getByRole("button", { name: "START INVESTIGATION" }));
 
     expect(push).toHaveBeenCalledWith("/sign-in");
+
+    const persisted = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}");
+    expect(persisted.jobInput).toBe(PASTED_POSTING);
+    // No auth fields exist on flow state anymore (see task-7 trim of
+    // lib/flow-context.tsx) — the draft is the only thing carried.
+    expect(persisted).not.toHaveProperty("signedIn");
+    expect(persisted).not.toHaveProperty("authEmail");
     landing.unmount();
 
-    // --- 2. SIGN-IN: QueuedCard shows the paste; sign in; expect /check/new ---
-    const signIn = render(
+    // --- 2. SIGN-IN: the QueuedCard reads the carried draft back out of flow state ---
+    render(
       <FlowProvider>
-        <SignInPage />
+        {await SignInPage()}
       </FlowProvider>,
     );
 
     expect(await screen.findByText(PASTED_POSTING)).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jane@example.com" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter22" } });
-    fireEvent.click(screen.getByRole("button", { name: "SIGN IN AND RUN THE CHECK" }));
-
-    expect(push).toHaveBeenCalledWith("/check/new");
-
-    const persistedAfterSignIn = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) ?? "{}");
-    expect(persistedAfterSignIn.signedIn).toBe(true);
-    expect(persistedAfterSignIn.authEmail).toBe("jane@example.com");
-    signIn.unmount();
-
-    // --- 3. DETAILS: job field prefilled; SKIP; expect /check/running ---
-    const details = render(
-      <FlowProvider>
-        <DetailsPage />
-      </FlowProvider>,
-    );
-
-    const jobField = (await screen.findByRole("textbox", {
-      name: "Job link or job text",
-    })) as HTMLTextAreaElement;
-    expect(jobField.value).toBe(PASTED_POSTING);
-
-    fireEvent.click(screen.getByRole("button", { name: "SKIP THE EXTRAS AND RUN IT" }));
-
-    expect(push).toHaveBeenCalledWith("/check/running");
-    details.unmount();
-
-    // --- 4. PROGRESS: stub the POST + owner key, run the script, expect /report/:id ---
-    createInvestigation.mockResolvedValue({ id: "abc" });
-    vi.useFakeTimers();
-
-    const running = render(
-      <FlowProvider>
-        <RunningPage />
-      </FlowProvider>,
-    );
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4000);
-    });
-
-    expect(push).toHaveBeenCalledWith("/report/abc");
-
-    vi.useRealTimers();
-    running.unmount();
-
-    // --- 5. REPORT: stub fetch -> SAMPLE_HIGH; assert HIGH RISK; then reset ---
-    fetchInvestigation.mockResolvedValue(SAMPLE_HIGH.inv);
-
-    let report!: ReturnType<typeof render>;
-    await act(async () => {
-      report = render(
-        <FlowProvider>
-          <Suspense fallback={null}>
-            <ReportPage params={Promise.resolve({ id: "abc" })} />
-          </Suspense>
-        </FlowProvider>,
-      );
-    });
-
-    expect(await screen.findByText("HIGH RISK")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "CHECK ANOTHER POSTING" }));
-
-    expect(push).toHaveBeenCalledWith("/");
-    expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
-    report.unmount();
   });
 });

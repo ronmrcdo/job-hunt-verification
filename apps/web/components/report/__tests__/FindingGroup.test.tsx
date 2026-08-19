@@ -7,7 +7,7 @@ import { toReportViewModel } from "../../../lib/report-view-model";
 import { SAMPLE_HIGH } from "../../../lib/__fixtures__/sample-high";
 
 function highVM() {
-  return toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+  return toReportViewModel(SAMPLE_HIGH.inv);
 }
 
 describe("FindingGroup", () => {
@@ -45,10 +45,10 @@ describe("FindingGroup", () => {
 describe("Summary", () => {
   it("renders the SUMMARY micro label and the passed summary text", () => {
     const vm = highVM();
-    render(<Summary summary={vm.summary} />);
+    render(<Summary summary={vm.summary as string} />);
 
     expect(screen.getByText("SUMMARY")).toBeTruthy();
-    expect(screen.getByText(vm.summary)).toBeTruthy();
+    expect(screen.getByText(vm.summary as string)).toBeTruthy();
   });
 });
 

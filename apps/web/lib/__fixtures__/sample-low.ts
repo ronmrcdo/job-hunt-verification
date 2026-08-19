@@ -1,4 +1,4 @@
-import type { Investigation } from "../api";
+import type { Investigation } from "../investigations";
 
 // Transcribed verbatim from the design handoff prototype's LOW_FINDINGS /
 // LOW_CHECKS / summary (band === 'LOW') data, found in:
@@ -12,16 +12,17 @@ import type { Investigation } from "../api";
 // to `Finding.mitigation` (F-04, F-05); F-01..F-03 have neither and get null.
 export const SAMPLE_LOW: {
   inv: Investigation;
-  submitted: {
-    jobTitle: string;
-    company: string;
-    recruiter: string;
-    email: string;
-  };
 } = {
   inv: {
     id: "51a00442-0000-4000-8000-000000000002",
-    status: "complete",
+    user_id: "9e7c5c9a-0000-4000-8000-0000000000bb",
+    status: "done",
+    created_at: "2026-08-18T09:41:00Z",
+    submission: {
+      job_text: "Customer Operations Associate",
+      company_name: "Northwind Systems",
+      recruiter_email: "dana.whitfield@northwind-systems.com",
+    },
     assessment: {
       band: "LOW",
       confidence: "HIGH",
@@ -145,11 +146,5 @@ export const SAMPLE_LOW: {
           "Normal for a small employer — worth confirming in writing before you take unpaid steps.",
       },
     ],
-  },
-  submitted: {
-    jobTitle: "Customer Operations Associate",
-    company: "Northwind Systems",
-    recruiter: "Dana Whitfield · email",
-    email: "dana.whitfield@northwind-systems.com",
   },
 };

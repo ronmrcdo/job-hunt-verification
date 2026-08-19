@@ -1,25 +1,32 @@
 "use client";
 
-// Renders the seven scripted steps in DISPLAY order (1..7) while each row's
-// state is derived from COMPLETION progress, which closes out of order
-// (1, 3, 4, 2, 5, 6, 7) — see progress-script.ts.
-import { COMPLETION_ORDER, STEPS, type ProgressStep } from "./progress-script";
+// Renders the real InvestigationStep rows in display_order. Each row's
+// visual state is a direct map off the DB row's `status` — steps close out
+// of order server-side, but the row that's currently `running` is always
+// the one shown "Open" regardless of its position in the list.
 import { StepRow, type StepRowState } from "./StepRow";
+import type { InvestigationStep } from "../../lib/investigations";
 
 export interface StepListProps {
-  steps?: ProgressStep[];
-  doneSteps: number[] | Set<number>;
+  steps: InvestigationStep[];
   caseId?: string;
 }
 
-function stepState(step: ProgressStep, done: Set<number>): StepRowState {
-  if (done.has(step.id)) return step.soft ? "soft" : "done";
-  const runningId = COMPLETION_ORDER.find((id) => !done.has(id));
-  return step.id === runningId ? "running" : "queued";
+const STATUS_TO_STATE: Record<string, StepRowState> = {
+  done: "done",
+  running: "running",
+  pending: "queued",
+  skipped: "soft",
+  failed: "failed",
+};
+
+function stepState(status: string): StepRowState {
+  return STATUS_TO_STATE[status] ?? "queued";
 }
 
-export function StepList({ steps = STEPS, doneSteps, caseId }: StepListProps) {
-  const done = doneSteps instanceof Set ? doneSteps : new Set(doneSteps);
+export function StepList({ steps, caseId }: StepListProps) {
+  const sorted = [...steps].sort((a, b) => a.display_order - b.display_order);
+  const doneCount = steps.filter((s) => s.status === "done").length;
 
   return (
     <div>
@@ -28,12 +35,16 @@ export function StepList({ steps = STEPS, doneSteps, caseId }: StepListProps) {
           aria-live="polite"
           className="pb-3 font-mono text-[12px] uppercase tracking-[0.1em] text-muted"
         >
-          CASE {caseId} · {done.size} of 7 steps closed
+          CASE {caseId} · {doneCount} of {steps.length} steps closed
         </div>
       )}
       <div>
-        {steps.map((step) => (
-          <StepRow key={step.id} step={step} state={stepState(step, done)} />
+        {sorted.map((step) => (
+          <StepRow
+            key={step.step_key}
+            step={{ title: step.label }}
+            state={stepState(step.status)}
+          />
         ))}
       </div>
     </div>

@@ -18,8 +18,12 @@ ownership by an anonymous per-browser `X-Owner-Key`. V1 restructures this
   exposing the SDK-managed `/api/inngest` endpoint (plus `/healthz`). It
   runs the LangGraph investigation, emits per-step progress, and persists
   the shaped result via the service-role connection.
-- A database webhook (a `pg_net` trigger, versioned in migrations) sends
-  the `investigation.requested` event to Inngest when a row is inserted.
+- On INSERT, a trigger (versioned in migrations) invokes a Supabase
+  **Edge Function** (`emit-investigation-requested`) which sends the
+  `investigation.requested` event to Inngest. The DB emits a generic
+  "row inserted" signal and knows only its own project's function; the
+  Inngest endpoint URL and event key live in the Edge Function's
+  environment — never in migration SQL.
 - **Supabase Auth** (required sign-in: email/password + Google OAuth)
   replaces `X-Owner-Key`. Clean break: V0 anonymous data is dropped and the
   entire FastAPI route layer (`main.py` routes, owner-key logic, the
@@ -46,8 +50,11 @@ Browser (redesigned web, later: Next.js + supabase-js)
   │ sign-in (Supabase Auth) · INSERT investigations (RLS) ·
   │ SELECT investigations/steps (RLS) · Realtime subscribe (steps)
   ▼
-Supabase (Postgres + Auth + Realtime)
-  │ on INSERT investigations → pg_net webhook trigger
+Supabase (Postgres + Auth + Realtime + Edge Functions)
+  │ on INSERT investigations → trigger invokes Edge Function
+  ▼   (Supabase-internal; DB never sees Inngest)
+Edge Function `emit-investigation-requested`
+  │ inngest.send(investigation.requested)   [holds INNGEST_EVENT_URL + KEY]
   ▼
 Inngest ── invokes over HTTP ──► Python worker (ASGI, /api/inngest only)
                                     └─ runs LangGraph via astream_events
@@ -61,7 +68,10 @@ Inngest ── invokes over HTTP ──► Python worker (ASGI, /api/inngest onl
   the whole graph run. Layering: Inngest owns "the run happens, retries,
   eventually settles"; LangGraph's Postgres checkpointer (thread id =
   investigation id) owns "where inside the run we are" — an Inngest retry
-  resumes from the last completed node, never restarts.
+  resumes from the last completed node, never restarts. The checkpointer's
+  tables are **authored as migration files** (§5), not created at worker
+  boot via `PostgresSaver.setup()` — migrations stay the single source of
+  schema truth and the no-DB-access constraint holds.
 - **Shaping moves to write time.** V0's GET endpoint enforced source
   excerpting and defanging at read time. Now the worker is the **only
   writer** of `assessment`/`findings`/`sources`, and it persists only
@@ -102,9 +112,13 @@ Inngest ── invokes over HTTP ──► Python worker (ASGI, /api/inngest onl
     service role). Client-visible source excerpts live inside the shaped
     report JSON, as V0's response did.
 - **Input validation at the boundary:** CHECK constraints replace Pydantic
-  route validation — `char_length(submission->>'job_text')` within the
-  configured cap and non-empty; oversize input fails the INSERT itself.
-  Semantic validation stays in the graph's intake node, as today.
+  route validation. `job_text` is required and length-bounded — the
+  constraint must assert presence *and* length, because
+  `char_length(submission->>'job_text')` is `NULL` for a missing key and a
+  `NULL` CHECK passes:
+  `submission ? 'job_text' AND char_length(submission->>'job_text') BETWEEN 1 AND <cap>`.
+  Oversize or missing input fails the INSERT itself. Semantic validation
+  stays in the graph's intake node, as today.
 
 ## 5. Schema & progress emission
 
@@ -122,17 +136,34 @@ Migrations are authored as Supabase CLI files in `supabase/migrations/`
   `queued|running|done|failed|deadline_exceeded`); add
   `check_count int` (dedupe-hit counter surfaced to the UI); keep
   `submission`, `assessment`, `findings`, `cost`, `what_to_verify`,
-  `created_at`. CHECK constraints per §4.
+  `created_at`. CHECK constraints per §4. In the `supabase_realtime`
+  publication so the client can subscribe to the row's status-flip UPDATE
+  (§7.4); the `SELECT ... USING (user_id = auth.uid())` policy gates the
+  stream, so a client only ever receives changes to its own rows.
 - `investigation_steps` (new): `investigation_id uuid` FK (cascade delete),
   `step_key text`, `label text`, `display_order int`, `status text`
   (`pending|running|done|skipped|failed`), `started_at`, `finished_at`,
   PK `(investigation_id, step_key)`. In the `supabase_realtime`
   publication. Label and order are denormalized onto the rows so the
   frontend renders entirely from data — no hardcoded step names.
-- **Webhook trigger** (in migrations): AFTER INSERT on `investigations` →
-  `pg_net` POST to the Inngest event API (`investigation.requested`,
-  event id = investigation id). The Inngest event key is stored via
-  Supabase Vault, not inline in the trigger source.
+- **LangGraph checkpointer tables** (new): authored as migration files that
+  reproduce the schema `PostgresSaver`/`AsyncPostgresSaver` would create,
+  so the worker connects with `setup()` effectively a no-op. Worker-only
+  (no client RLS policies). Pinned to the LangGraph checkpointer version in
+  use; bumping that version means a new migration, never runtime DDL.
+- **Webhook chain** (event-driven, in migrations): AFTER INSERT on
+  `investigations` fires a trigger that invokes the Supabase Edge Function
+  `emit-investigation-requested` via the project's own function-invocation
+  mechanism (Supabase resolves its internal functions URL — the only
+  address the DB layer holds; no Inngest endpoint or key in trigger SQL).
+  The Edge Function calls `inngest.send({ name: 'investigation.requested',
+  id: <investigation id>, data: { investigation_id } })`. **The Inngest
+  event URL and key live in the Edge Function environment**
+  (`INNGEST_EVENT_URL`, `INNGEST_EVENT_KEY` via `supabase secrets set`),
+  so the same environment-agnostic migration runs identically in local and
+  prod. Delivery is retried by the invocation layer; the §6 stale sweeper
+  is the backstop for any lost send. Event id = investigation id keeps the
+  whole chain idempotent (§8).
 - **Step registry (`app/graph/steps.py`):** one dict, graph node name →
   `(step_key, label, display order)`, covering user-meaningful nodes
   (roughly: intake/extraction, company research, deterministic checks,
@@ -197,6 +228,13 @@ The redesigned web app must:
 - Soft-deadline behavior preserved: `asyncio.wait_for` inside the function;
   on timeout persist best-effort checkpoint state as `deadline_exceeded`
   (unverifiable findings still lower confidence, as today).
+- **Deadline is a clean return, not a raise.** The timeout path catches
+  `TimeoutError`, persists `deadline_exceeded`, and **returns normally** so
+  Inngest treats the run as settled and does *not* spend a retry — a retry
+  would resume the graph from checkpoint and flip a terminal
+  `deadline_exceeded` back to `running`. Only unexpected exceptions
+  propagate; those are what the `retries: 2` budget and `on_failure` exist
+  for. So: expected timeout → return; genuine error → raise.
 - Exhausted retries → `on_failure` → status `failed`, steps back-filled.
   The stale sweeper (§6) covers lost-webhook and zombie-`running` cases.
 - Client-visible data never includes secrets or cost internals beyond the
@@ -213,8 +251,12 @@ The redesigned web app must:
   deployed anywhere ASGI runs.
 - **Worker env vars:** `DATABASE_URL` (Supabase direct/service
   connection), `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`.
-- **Supabase config:** Google OAuth credentials; Vault secret for the
-  webhook's Inngest event key.
+- **Supabase config:** Google OAuth credentials. Edge Function
+  `emit-investigation-requested` deployed with `INNGEST_EVENT_URL` and
+  `INNGEST_EVENT_KEY` set via `supabase secrets set` (per environment:
+  the Inngest Dev Server locally, the self-hosted Inngest instance in
+  prod). The trigger→function invocation uses only the project's own
+  functions endpoint, so no Inngest config lives in migrations.
 
 ## 10. Testing
 
@@ -233,7 +275,12 @@ TDD throughout (red/green per task); folded into each implementation phase.
 - **Migrations/RLS:** authored with an **operator-run** verification
   script (`scripts/verify_rls.sql` + runbook): as user A insert/select own
   rows, fail to read user B's rows, fail to update status, oversize insert
-  rejected, webhook trigger fires. Not run by the implementation.
+  rejected, **missing `job_text` also rejected** (guards the NULL-CHECK
+  trap in §4), INSERT invokes the Edge Function (observed via its logs / a
+  stubbed Inngest endpoint). Not run by the implementation.
+- **Edge Function:** unit-test `emit-investigation-requested` in isolation
+  — given a webhook payload it calls `inngest.send` with the right event
+  name and `id = investigation id`, reading URL/key from its env.
 - **End-to-end smoke:** a documented **operator-run** script (sign-in via
   auth REST API → insert → observe Realtime → select) against local
   Supabase + Inngest dev server, standing in for the descoped UI.

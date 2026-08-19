@@ -1,44 +1,78 @@
 "use client";
 
-// The sign-in / create-account gate. There is no auth backend in V0 —
-// "signing in" is purely local validation followed by the caller writing
-// flow state and routing. SECURITY: the password never leaves this
-// component's own state — it is passed to nothing, stored nowhere else,
-// and never handed to onSuccess or flow storage (see flow-context.tsx).
-import { useState, type FormEvent } from "react";
+// The sign-in / create-account gate, backed by real Supabase auth.
+// SECURITY: the password lives only in react-hook-form's field state — it
+// is passed straight to Supabase and never written into flow state or
+// storage (see flow-context.tsx).
+import { useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { TextField } from "../ui/TextField";
 import { Button } from "../ui/Button";
 import { MicroLabel } from "../ui/MicroLabel";
-import type { AuthMode } from "../../lib/flow-context";
+import { authSchema, type AuthInput } from "../../lib/validation";
+import { createClient } from "../../lib/supabase/client";
 
-export interface AuthFormProps {
-  onSuccess: (email: string, mode: AuthMode) => void;
-}
+type Mode = "signin" | "create";
 
-const CTA_LABEL: Record<AuthMode, string> = {
+const CTA_LABEL: Record<Mode, string> = {
   signin: "SIGN IN AND RUN THE CHECK",
   create: "CREATE ACCOUNT AND RUN THE CHECK",
 };
 
-export function AuthForm({ onSuccess }: AuthFormProps) {
-  const [mode, setMode] = useState<AuthMode>("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showInvalid, setShowInvalid] = useState(false);
+export function AuthForm() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("signin");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [confirmSent, setConfirmSent] = useState(false);
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<AuthInput>({ resolver: zodResolver(authSchema) });
 
-  function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!email.trim() || password.length < 8) {
-      setShowInvalid(true);
-      return;
+  async function onSubmit(values: AuthInput) {
+    setAuthError(null);
+    setConfirmSent(false);
+    const supabase = createClient();
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    if (mode === "signin") {
+      const { error } = await supabase.auth.signInWithPassword(values);
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+      router.push("/verify");
+    } else {
+      const { error } = await supabase.auth.signUp({
+        ...values,
+        options: { emailRedirectTo: redirectTo },
+      });
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+      setConfirmSent(true);
     }
-    setShowInvalid(false);
-    onSuccess(email, mode);
   }
 
+  async function onGoogle() {
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+  }
+
+  const fieldError = errors.email?.message ?? errors.password?.message ?? null;
+
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4 border border-ink p-6">
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      className="flex flex-col gap-4 border border-ink p-6"
+    >
       <div className="flex border border-ink">
         <button
           type="button"
@@ -62,32 +96,63 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
         </button>
       </div>
 
-      <TextField
-        label="Email"
-        value={email}
-        onChange={setEmail}
-        placeholder="you@example.com"
-        autoComplete="email"
+      <Controller
+        name="email"
+        control={control}
+        defaultValue=""
+        render={({ field }) => (
+          <TextField
+            label="Email"
+            type="email"
+            value={field.value ?? ""}
+            onChange={field.onChange}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        )}
       />
-      <TextField
-        label="Password"
-        value={password}
-        onChange={setPassword}
-        type="password"
-        placeholder="At least 8 characters"
-        autoComplete={mode === "signin" ? "current-password" : "new-password"}
+      <Controller
+        name="password"
+        control={control}
+        defaultValue=""
+        render={({ field }) => (
+          <TextField
+            label="Password"
+            type="password"
+            value={field.value ?? ""}
+            onChange={field.onChange}
+            placeholder="At least 8 characters"
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          />
+        )}
       />
 
-      {showInvalid ? (
+      {fieldError ? (
         <div role="alert" className="rounded-none border border-warn-rule bg-warn-tint p-3">
+          <p className="text-[13px] leading-[1.5]">{fieldError}</p>
+        </div>
+      ) : null}
+
+      {authError ? (
+        <div role="alert" className="rounded-none border border-warn-rule bg-warn-tint p-3">
+          <p className="text-[13px] leading-[1.5]">{authError}</p>
+        </div>
+      ) : null}
+
+      {confirmSent ? (
+        <div role="status" className="rounded-none border border-rule bg-page p-3">
           <p className="text-[13px] leading-[1.5]">
-            Enter an email and a password of at least 8 characters to continue.
+            Check your email to confirm your account before signing in.
           </p>
         </div>
       ) : null}
 
       <Button type="submit" variant="primary" size="wide">
         {CTA_LABEL[mode]}
+      </Button>
+
+      <Button type="button" variant="secondary" size="wide" onClick={onGoogle}>
+        Continue with Google
       </Button>
 
       <div className="text-[13px] leading-[1.5] text-muted">

@@ -1,19 +1,11 @@
 // Reconciliation spine: every report component renders from the ReportVM
 // produced here. Nothing downstream should read `Investigation` directly.
-import type { Investigation } from "./api";
+import type { Investigation, Source } from "./investigations";
 import { defang } from "./defang";
 import { formatStamp, pad2 } from "./format";
 
 export type Band = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
 export type ConfidenceLevel = "Low" | "Medium" | "High";
-
-export interface Submitted {
-  jobTitle?: string;
-  company?: string;
-  recruiter?: string;
-  contactChannel?: string;
-  email?: string;
-}
 
 export interface SourceVM {
   name: string;
@@ -35,13 +27,14 @@ export interface FindingVM {
 
 export interface ReportVM {
   caseId: string;
-  band: Band;
-  bandIndex: number; // 1..4
-  bandMeaning: string;
-  confidence: ConfidenceLevel;
-  confidenceSegments: number; // 1..3
-  confidenceNote: string;
-  summary: string;
+  complete: boolean; // false when the assessment never computed (e.g. deadline_exceeded)
+  band: Band | null;
+  bandIndex: number | null; // 1..4
+  bandMeaning: string | null;
+  confidence: ConfidenceLevel | null;
+  confidenceSegments: number | null; // 1..3
+  confidenceNote: string | null;
+  summary: string | null;
   repeatLine: string; // "CHECKED 3 TIMES IN THE PAST WEEK" | "FIRST CHECK ON THIS POSTING"
   submitted: { label: string; value: string; mono?: boolean }[];
   groups: {
@@ -52,6 +45,20 @@ export interface ReportVM {
   }[];
   verifyChecklist: string[];
 }
+
+// Narrowed view of ReportVM for the complete-report branch, where band/
+// confidence/summary are guaranteed non-null. Kept local to the report
+// components that only ever render once `vm.complete` is true.
+export type CompleteReportVM = ReportVM & {
+  complete: true;
+  band: Band;
+  bandIndex: number;
+  bandMeaning: string;
+  confidence: ConfidenceLevel;
+  confidenceSegments: number;
+  confidenceNote: string;
+  summary: string;
+};
 
 export const BAND_MEANING: Record<Band, string> = {
   HIGH: "Multiple signals here match patterns common in job scams. Treat it with caution and verify independently before acting.",
@@ -89,7 +96,7 @@ const GROUP_HEADING: Record<FindingVM["direction"], string> = {
   unverifiable: "What we couldn't verify",
 };
 
-function sourceName(source: Investigation["sources"][number]): { name: string; defang: boolean } {
+function sourceName(source: Source): { name: string; defang: boolean } {
   if (source.url) {
     return { name: defang(source.url), defang: true };
   }
@@ -108,7 +115,7 @@ function sourceName(source: Investigation["sources"][number]): { name: string; d
   }
 }
 
-function toSourceVM(source: Investigation["sources"][number]): SourceVM {
+function toSourceVM(source: Source): SourceVM {
   const { name, defang: isDefanged } = sourceName(source);
   return {
     name,
@@ -140,18 +147,24 @@ function toCaseId(id: string): string {
   return id.replace(/-/g, "").slice(0, 8).toUpperCase();
 }
 
-export function toReportViewModel(inv: Investigation, submitted?: Submitted): ReportVM {
+export function toReportViewModel(inv: Investigation): ReportVM {
   const assessment = inv.assessment;
-  const band: Band = assessment?.band ?? "MODERATE";
-  const confidenceRaw: "LOW" | "MODERATE" | "HIGH" = assessment?.confidence ?? "MODERATE";
-  const { level: confidence, segments: confidenceSegments } = CONFIDENCE_MAP[confidenceRaw];
+  const complete = assessment != null;
 
-  const sourceById = new Map(inv.sources.map((s) => [s.id, s]));
+  const band: Band | null = assessment?.band ?? null;
+  const confidenceRaw = assessment?.confidence ?? null;
+  const conf = confidenceRaw ? CONFIDENCE_MAP[confidenceRaw] : null;
+  const bandIndex = band ? BAND_INDEX[band] : null;
+  const bandMeaning = band ? BAND_MEANING[band] : null;
 
-  const findingVMs: FindingVM[] = inv.findings.map((finding, index) => {
-    const sources = (finding.source_ids ?? [])
+  const sources = inv.sources ?? [];
+  const findings = inv.findings ?? [];
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
+
+  const findingVMs: FindingVM[] = findings.map((finding, index) => {
+    const findingSources = (finding.source_ids ?? [])
       .map((id) => sourceById.get(id))
-      .filter((s): s is Investigation["sources"][number] => s !== undefined)
+      .filter((s): s is Source => s !== undefined)
       .map(toSourceVM);
 
     return {
@@ -159,13 +172,13 @@ export function toReportViewModel(inv: Investigation, submitted?: Submitted): Re
       direction: finding.direction,
       severity: finding.severity,
       claim: finding.claim,
-      metaLine: buildMetaLine(finding.direction, finding.severity, sources.length),
+      metaLine: buildMetaLine(finding.direction, finding.severity, findingSources.length),
       provenanceLabel:
         finding.provenance === "user_provided_unverified"
           ? "Based on the conversation you shared — we can't independently verify it."
           : null,
       however: finding.mitigation ?? null,
-      sources,
+      sources: findingSources,
     };
   });
 
@@ -184,26 +197,25 @@ export function toReportViewModel(inv: Investigation, submitted?: Submitted): Re
       ? `CHECKED ${inv.check_count} TIMES IN THE PAST WEEK`
       : "FIRST CHECK ON THIS POSTING";
 
+  // Job title / recruiter name / contact channel have no corresponding
+  // field on `Submission` — those rows are simply never produced. Only
+  // company_name and recruiter_email round-trip from the submitted job.
   const submittedRows: { label: string; value: string; mono?: boolean }[] = [];
-  if (submitted?.jobTitle !== undefined) submittedRows.push({ label: "Job", value: submitted.jobTitle });
-  if (submitted?.company !== undefined)
-    submittedRows.push({ label: "Company", value: submitted.company });
-  if (submitted?.recruiter !== undefined)
-    submittedRows.push({ label: "Recruiter", value: submitted.recruiter });
-  if (submitted?.contactChannel !== undefined)
-    submittedRows.push({ label: "Contact channel", value: submitted.contactChannel });
-  if (submitted?.email !== undefined)
-    submittedRows.push({ label: "Email", value: submitted.email, mono: true });
+  if (inv.submission.company_name !== undefined)
+    submittedRows.push({ label: "Company", value: inv.submission.company_name });
+  if (inv.submission.recruiter_email !== undefined)
+    submittedRows.push({ label: "Email", value: inv.submission.recruiter_email, mono: true });
 
   return {
     caseId: toCaseId(inv.id),
+    complete,
     band,
-    bandIndex: BAND_INDEX[band],
-    bandMeaning: BAND_MEANING[band],
-    confidence,
-    confidenceSegments,
-    confidenceNote: CONFIDENCE_NOTE[confidence],
-    summary: assessment?.summary ?? "",
+    bandIndex,
+    bandMeaning,
+    confidence: conf?.level ?? null,
+    confidenceSegments: conf?.segments ?? null,
+    confidenceNote: conf ? CONFIDENCE_NOTE[conf.level] : null,
+    summary: assessment?.summary ?? null,
     repeatLine,
     submitted: submittedRows,
     groups,

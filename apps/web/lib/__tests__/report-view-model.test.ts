@@ -5,7 +5,7 @@ import { SAMPLE_LOW } from "../__fixtures__/sample-low";
 
 describe("toReportViewModel", () => {
   it("maps the HIGH fixture", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
 
     expect(vm.band).toBe("HIGH");
     expect(vm.bandIndex).toBe(3);
@@ -46,10 +46,67 @@ describe("toReportViewModel", () => {
   });
 
   it("maps the LOW fixture", () => {
-    const vm = toReportViewModel(SAMPLE_LOW.inv, SAMPLE_LOW.submitted);
+    const vm = toReportViewModel(SAMPLE_LOW.inv);
 
     expect(vm.groups.find((g) => g.key === "suspicious")).toBeUndefined();
     expect(vm.confidence).toBe("High");
     expect(vm.bandIndex).toBe(1);
+  });
+
+  it("derives submitted rows from inv.submission, not a passed-in argument", () => {
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
+
+    expect(vm.submitted).toContainEqual({ label: "Company", value: "Acme Global" });
+    expect(vm.submitted).toContainEqual({
+      label: "Email",
+      value: "acmeglobalcareers@gmail.com",
+      mono: true,
+    });
+    // Job title / recruiter / contact channel have no source field on
+    // Submission, so they never appear as rows.
+    expect(vm.submitted.map((r) => r.label)).not.toContain("Job");
+    expect(vm.submitted.map((r) => r.label)).not.toContain("Recruiter");
+    expect(vm.submitted.map((r) => r.label)).not.toContain("Contact channel");
+  });
+
+  it("omits a submitted row entirely when the corresponding submission field is absent", () => {
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { job_text: "some posting" },
+    });
+
+    expect(vm.submitted).toEqual([]);
+  });
+});
+
+function inv(overrides: any) {
+  return {
+    id: "11111111-2222-3333-4444-555555555555",
+    status: "deadline_exceeded",
+    submission: {},
+    assessment: null,
+    findings: [],
+    sources: [],
+    what_to_verify: [],
+    check_count: null,
+    ...overrides,
+  } as any;
+}
+
+describe("toReportViewModel with a missing assessment", () => {
+  it("does not fabricate a band", () => {
+    const vm = toReportViewModel(inv({ assessment: null }));
+    expect(vm.complete).toBe(false);
+    expect(vm.band).toBeNull();
+    expect(vm.confidence).toBeNull();
+    expect(vm.summary).toBeNull();
+  });
+
+  it("stays complete when the assessment is present", () => {
+    const vm = toReportViewModel(
+      inv({ status: "done", assessment: { band: "LOW", confidence: "HIGH", summary: "ok" } }),
+    );
+    expect(vm.complete).toBe(true);
+    expect(vm.band).toBe("LOW");
   });
 });

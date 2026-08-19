@@ -3,9 +3,11 @@
 // Sticky report sidebar: the counts strip plus the save/check-another
 // actions and a reminder of where the report is saved. Product rule #7:
 // buttons describe what happens ("Save this report"), never "Submit".
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ReportVM } from "../../lib/report-view-model";
 import { useFlow } from "../../lib/flow-context";
+import { createClient } from "../../lib/supabase/client";
 import { CountsStrip } from "./CountsStrip";
 import { Button } from "../ui/Button";
 import { MicroLabel } from "../ui/MicroLabel";
@@ -18,7 +20,22 @@ export interface ReportRailProps {
 
 export function ReportRail({ vm, saved, onSave }: ReportRailProps) {
   const router = useRouter();
-  const { state, reset } = useFlow();
+  const { reset } = useFlow();
+  // authEmail no longer lives in flow state (task-7 trim of
+  // lib/flow-context.tsx) — auth is Supabase-session-driven now, same
+  // pattern as SiteHeader.
+  const [email, setEmail] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .auth.getUser()
+      .then(({ data }) => {
+        if (!cancelled) setEmail(data.user?.email ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleCheckAnother = () => {
     reset();
@@ -40,7 +57,7 @@ export function ReportRail({ vm, saved, onSave }: ReportRailProps) {
 
       <div className="rounded-none border border-ink-muted p-4">
         <MicroLabel>SAVED TO</MicroLabel>
-        <p className="mt-2 font-mono text-[12px]">{state.authEmail}</p>
+        <p className="mt-2 font-mono text-[12px]">{email}</p>
         <p className="mt-2 text-[12px] text-muted">
           Reports stay private to your account. Repeat checks on the same posting are counted, never
           published.

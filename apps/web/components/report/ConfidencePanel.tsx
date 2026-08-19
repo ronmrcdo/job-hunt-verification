@@ -1,4 +1,4 @@
-import type { ReportVM } from "../../lib/report-view-model";
+import type { CompleteReportVM } from "../../lib/report-view-model";
 import { MicroLabel } from "../ui/MicroLabel";
 import { SegmentBar } from "../ui/SegmentBar";
 import { Tooltip } from "../ui/Tooltip";
@@ -8,7 +8,9 @@ const CONFIDENCE_EXPLANATION =
   "Confidence reflects how much we could verify — how many sources responded, how directly they addressed the claim, and how much rested on material we can't check independently.";
 
 export interface ConfidencePanelProps {
-  vm: ReportVM;
+  // CompleteReportVM (not ReportVM): the compiler enforces that a null
+  // confidence can never reach this component, at every call site.
+  vm: CompleteReportVM;
 }
 
 // Product rule #2: confidence is a distinct concept from the risk band, so

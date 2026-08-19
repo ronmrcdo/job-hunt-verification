@@ -26,13 +26,37 @@ import { SiteHeader } from "../../components/site/SiteHeader";
 import { HowItRuns } from "../../components/landing/HowItRuns";
 import { FlowProvider } from "../../lib/flow-context";
 import { toReportViewModel } from "../../lib/report-view-model";
+import type { CompleteReportVM } from "../../lib/report-view-model";
 import { SAMPLE_HIGH } from "../../lib/__fixtures__/sample-high";
+import type { Investigation } from "../../lib/investigations";
+
+// SAMPLE_HIGH carries a real assessment, so the report is always complete —
+// this cast is honest for that reason, not a workaround.
+function completeVM(inv: Investigation): CompleteReportVM {
+  return toReportViewModel(inv) as CompleteReportVM;
+}
 
 // SiteHeader calls next/navigation's useRouter (for the "Check a job"
 // button) — mock it the same way components/site/__tests__/SiteHeader.test.tsx
 // does so it can render outside a real app router.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
+}));
+
+// AuthForm and SiteHeader both call the browser Supabase client — mock it
+// so these a11y-only tests never hit the network (see the AuthForm/
+// SiteHeader test suites for the behavioral contracts).
+vi.mock("../../lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: {
+      signInWithPassword: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      signUp: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      signInWithOAuth: vi.fn().mockResolvedValue({ data: {}, error: null }),
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+      getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+      signOut: vi.fn().mockResolvedValue({ error: null }),
+    },
+  }),
 }));
 
 describe("a11y: Tooltip", () => {
@@ -96,7 +120,7 @@ describe("a11y: Tooltip", () => {
   });
 
   it("ConfidencePanel passes a light tone to its Tooltip so the trigger stays visible on BandBanner's dark band", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = completeVM(SAMPLE_HIGH.inv);
     render(<ConfidencePanel vm={vm} />);
     const trigger = screen.getByRole("button", { name: "Confidence explanation" });
     expect(trigger.style.borderColor).toBe("var(--color-page)");
@@ -105,7 +129,7 @@ describe("a11y: Tooltip", () => {
 
 describe("a11y: FindingCard toggle", () => {
   it("toggle is a real <button> with an accessible name, and aria-controls only references the expanded region while it's mounted", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const finding = vm.groups.flatMap((g) => g.findings).find((f) => f.recordId === "F-03")!;
     render(<FindingCard finding={finding} />);
 
@@ -130,7 +154,7 @@ describe("a11y: FindingCard toggle", () => {
 
 describe("a11y: VerifyChecklist items", () => {
   it("an item is reachable as role=checkbox and toggles aria-checked on click (R12: no manual keydown-Space handler)", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     render(<VerifyChecklist items={vm.verifyChecklist} />);
 
     const first = screen.getAllByRole("checkbox")[0];
@@ -147,7 +171,7 @@ describe("a11y: VerifyChecklist items", () => {
 
 describe("a11y: band banner conveys band + confidence as text", () => {
   it("renders the band title and a textual confidence word, not color alone", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = completeVM(SAMPLE_HIGH.inv);
     render(<BandBanner vm={vm} confidenceSlot={<div>MEDIUM</div>} />);
 
     // Band conveyed as text (e.g. "HIGH RISK"), independent of the marker color.
@@ -169,8 +193,28 @@ describe("a11y: DefangedText is inert", () => {
 
 describe("a11y: progress is announced to assistive tech", () => {
   it("StepList's case/count header carries aria-live=polite", () => {
-    render(<StepList doneSteps={[1, 3]} caseId="4F2C-1180" />);
-    const region = screen.getByText("CASE 4F2C-1180 · 2 of 7 steps closed");
+    const steps = [
+      {
+        investigation_id: "i",
+        step_key: "a",
+        label: "A",
+        display_order: 1,
+        status: "done",
+        started_at: null,
+        finished_at: null,
+      },
+      {
+        investigation_id: "i",
+        step_key: "b",
+        label: "B",
+        display_order: 2,
+        status: "running",
+        started_at: null,
+        finished_at: null,
+      },
+    ];
+    render(<StepList steps={steps} caseId="4F2C-1180" />);
+    const region = screen.getByText("CASE 4F2C-1180 · 1 of 2 steps closed");
     expect(region).toHaveAttribute("aria-live", "polite");
   });
 });
@@ -182,25 +226,25 @@ describe("a11y: form fields carry autoComplete", () => {
   });
 
   it("AuthForm wires email/current-password autoComplete in signin mode", () => {
-    render(<AuthForm onSuccess={() => {}} />);
+    render(<AuthForm />);
     expect(screen.getByLabelText("Email")).toHaveAttribute("autocomplete", "email");
     expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "current-password");
   });
 
   it("AuthForm switches to new-password autoComplete in create-account mode", () => {
-    render(<AuthForm onSuccess={() => {}} />);
+    render(<AuthForm />);
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "new-password");
   });
 });
 
 describe("a11y: dynamic status panels announce themselves", () => {
-  it("AuthForm's validation panel carries role=alert", () => {
-    render(<AuthForm onSuccess={() => {}} />);
+  it("AuthForm's validation panel carries role=alert", async () => {
+    render(<AuthForm />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "a@b.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "short" } });
     fireEvent.click(screen.getByRole("button", { name: "SIGN IN AND RUN THE CHECK" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Enter an email and a password of at least 8 characters to continue.",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(/at least 8 characters/i);
   });
 
   it("FetchErrorPanel carries role=alert", () => {

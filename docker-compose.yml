@@ -1,8 +1,82 @@
+name: job-hunt-verification
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local V1 stack: self-hosted Inngest + the Python worker/API + the Next.js web
+# app. Postgres/Auth/Storage come from the Supabase CLI, NOT this file — run
+# `supabase start` first (it manages its own Docker stack on :54321 gateway /
+# :54322 Postgres; see scripts/RUNBOOK.md). Containers here reach that Postgres
+# via the host gateway.
+#
+# Flow: web → Supabase edge fn `emit-investigation-requested` → Inngest (below)
+#       → api-worker /api/inngest → runs the graph → writes back to Postgres.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Shared env for the two Python services (same image, different command).
+x-api-env: &api-env
+  # Supabase CLI Postgres on the host (:54322). host.docker.internal is mapped
+  # via extra_hosts below.
+  DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54322/postgres
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  CHEAP_MODEL: ${CHEAP_MODEL:-gpt-5.6-luna}
+  STRONG_MODEL: ${STRONG_MODEL:-gpt-5.6-luna}
+  CHEAP_REASONING_EFFORT: ${CHEAP_REASONING_EFFORT:-low}
+  STRONG_REASONING_EFFORT: ${STRONG_REASONING_EFFORT:-high}
+
 services:
-  db:
-    image: postgres:16
+  # Self-hosted Inngest — the single-binary dev server. Matches the worker
+  # client's is_production=False (DEV_SERVER mode): no signing/event keys
+  # needed. `-u` points it at the worker's serve endpoint; --no-discovery
+  # disables localhost port scanning (useless across containers).
+  # Production upgrade path: `inngest start` + Postgres/Redis/keys and flip the
+  # worker to is_production=True.
+  inngest:
+    image: inngest/inngest:latest
+    command: inngest dev -u http://api-worker:8000/api/inngest --no-discovery
+    ports:
+      - "8288:8288" # dashboard + event ingestion (POST /e/<key>) + sync API
+    depends_on:
+      - api-worker
+
+  # Inngest worker — the ONLY HTTP surface Inngest calls back into.
+  api-worker:
+    build: ./apps/api
+    command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
     environment:
-      POSTGRES_PASSWORD: postgres
-    ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
-volumes: { pgdata: {} }
+      <<: *api-env
+      # One var sets both the API and event origins for the SDK client.
+      INNGEST_BASE_URL: http://inngest:8288
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000" # /api/inngest, /healthz
+
+  # V0 synchronous HTTP API (app.main) — same image, different entrypoint.
+  api-http:
+    build: ./apps/api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+    environment: *api-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8080" # POST /investigations, GET /investigations/{id}
+
+  # Next.js web app.
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    # Linux: share the host network so BOTH the browser and Next's server-side
+    # Supabase client resolve 127.0.0.1:54321 to the same Supabase CLI gateway
+    # with a single URL. Next listens on host :3000.
+    # Mac/Windows: remove network_mode, add `ports: ["3000:3000"]` +
+    # `extra_hosts: ["host.docker.internal:host-gateway"]`, and point the URL at
+    # host.docker.internal — but note the browser must resolve that name too.
+    network_mode: host
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    depends_on:
+      - api-http

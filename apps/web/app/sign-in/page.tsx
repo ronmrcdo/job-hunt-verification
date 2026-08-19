@@ -1,24 +1,18 @@
-"use client";
-
-// The auth gate between pasting a posting and running the check. There is
-// no auth backend in V0 (see AuthForm.tsx) — signing in just records local
-// flow state and routes to the check screen.
-import { useRouter } from "next/navigation";
+// The auth gate between pasting a posting and running the check. Server
+// component: an already-authenticated visitor is bounced to /verify so the
+// header "Check a job" CTA never dead-ends a signed-in user on the sign-in
+// form (middleware guards /verify + /investigations/*, not /sign-in).
+import { redirect } from "next/navigation";
+import { createClient } from "../../lib/supabase/server";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { MicroLabel } from "../../components/ui/MicroLabel";
 import { AuthForm } from "../../components/auth/AuthForm";
 import { QueuedCard } from "../../components/auth/QueuedCard";
-import { useFlow } from "../../lib/flow-context";
-import type { AuthMode } from "../../lib/flow-context";
 
-export default function Page() {
-  const router = useRouter();
-  const { set } = useFlow();
-
-  function onSuccess(email: string, mode: AuthMode) {
-    set({ signedIn: true, authEmail: email, authMode: mode });
-    router.push("/check/new");
-  }
+export default async function Page() {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (data.user) redirect("/verify");
 
   return (
     <>
@@ -40,7 +34,7 @@ export default function Page() {
           </p>
           <QueuedCard />
         </div>
-        <AuthForm onSuccess={onSuccess} />
+        <AuthForm />
       </main>
     </>
   );

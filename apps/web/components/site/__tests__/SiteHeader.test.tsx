@@ -1,44 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { SiteHeader } from "../SiteHeader";
-import { FlowProvider } from "../../../lib/flow-context";
 
+const { getSession, getUser, signOut } = vi.hoisted(() => {
+  return {
+    getSession: vi.fn(),
+    getUser: vi.fn(),
+    signOut: vi.fn().mockResolvedValue({ error: null }),
+  };
+});
+
+vi.mock("../../../lib/supabase/client", () => ({
+  createClient: () => ({ auth: { getSession, getUser, signOut } }),
+}));
+
+const push = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push }),
 }));
 
 beforeEach(() => {
-  window.sessionStorage.clear();
+  vi.clearAllMocks();
 });
 
 describe("SiteHeader", () => {
-  it("signed-out: shows Sign in link and Check a job button", () => {
-    render(
-      <FlowProvider>
-        <SiteHeader />
-      </FlowProvider>,
-    );
+  it("signed-out: shows Sign in link and Check a job button", async () => {
+    getSession.mockResolvedValue({ data: { session: null } });
 
-    expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
+    render(<SiteHeader />);
+
+    expect(await screen.findByRole("link", { name: "Sign in" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Check a job" })).toBeTruthy();
   });
 
-  it("signed-in: shows the auth email in place of Sign in, Check a job still present", async () => {
-    window.sessionStorage.setItem(
-      "jhv_flow",
-      JSON.stringify({ signedIn: true, authEmail: "a@b.co" }),
-    );
+  it("signed-in: shows the auth email and a sign-out control, Check a job still present", async () => {
+    getSession.mockResolvedValue({ data: { session: { user: { email: "a@b.co" } } } });
 
-    render(
-      <FlowProvider>
-        <SiteHeader />
-      </FlowProvider>,
-    );
+    render(<SiteHeader />);
 
-    // FlowProvider hydrates persisted state from sessionStorage in an
-    // effect after mount, so the signed-in UI appears asynchronously.
+    expect(getSession).toHaveBeenCalled();
+    expect(getUser).not.toHaveBeenCalled();
     expect(await screen.findByText("a@b.co")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Check a job" })).toBeTruthy();
   });
 });

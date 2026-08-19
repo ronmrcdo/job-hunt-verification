@@ -7,7 +7,7 @@ import { SAMPLE_LOW } from "../../../lib/__fixtures__/sample-low";
 
 describe("VerifyChecklist", () => {
   it("renders the FOUR-item heading and one checkbox per item for a 4-item checklist", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     render(<VerifyChecklist items={vm.verifyChecklist} />);
 
     expect(vm.verifyChecklist).toHaveLength(4);
@@ -21,7 +21,7 @@ describe("VerifyChecklist", () => {
   });
 
   it("renders the THREE-item heading for a 3-item checklist", () => {
-    const vm = toReportViewModel(SAMPLE_LOW.inv, SAMPLE_LOW.submitted);
+    const vm = toReportViewModel(SAMPLE_LOW.inv);
     render(<VerifyChecklist items={vm.verifyChecklist} />);
 
     expect(vm.verifyChecklist).toHaveLength(3);
@@ -31,7 +31,7 @@ describe("VerifyChecklist", () => {
   });
 
   it("clicking a row toggles its checked state (aria-checked flips, text gets strikethrough)", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     render(<VerifyChecklist items={vm.verifyChecklist} />);
 
     const checkboxes = screen.getAllByRole("checkbox");
@@ -53,7 +53,7 @@ describe("VerifyChecklist", () => {
     // asserts is: it's a genuine <button> (which is what guarantees
     // platform Enter/Space activation), and click — what that activation
     // produces — toggles aria-checked.
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     render(<VerifyChecklist items={vm.verifyChecklist} />);
 
     const first = screen.getAllByRole("checkbox")[0];

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Band, ReportVM } from "../../lib/report-view-model";
+import type { Band, CompleteReportVM } from "../../lib/report-view-model";
 import { MicroLabel } from "../ui/MicroLabel";
 import { SegmentBar } from "../ui/SegmentBar";
 
@@ -20,7 +20,9 @@ const BAND_COLOR: Record<Band, string> = {
 };
 
 export interface BandBannerProps {
-  vm: ReportVM;
+  // CompleteReportVM (not ReportVM): the compiler enforces that a null band
+  // can never reach this component, at every call site, not just today's.
+  vm: CompleteReportVM;
   confidenceSlot?: ReactNode;
 }
 

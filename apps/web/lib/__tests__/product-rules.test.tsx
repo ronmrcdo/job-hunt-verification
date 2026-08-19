@@ -5,6 +5,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { toReportViewModel } from "../report-view-model";
+import type { CompleteReportVM } from "../report-view-model";
 import { SAMPLE_HIGH } from "../__fixtures__/sample-high";
 import { SAMPLE_LOW } from "../__fixtures__/sample-low";
 import { FlowProvider } from "../flow-context";
@@ -19,9 +20,13 @@ vi.mock("next/navigation", () => ({
 }));
 
 function renderAssembledReport(vm: ReturnType<typeof toReportViewModel>) {
+  // Every fixture used with this helper (SAMPLE_HIGH/SAMPLE_LOW) carries a
+  // real assessment, so the report is always complete — this cast is honest
+  // for that reason, not a workaround.
+  const completeVm = vm as CompleteReportVM;
   return render(
     <FlowProvider>
-      <BandBanner vm={vm} confidenceSlot={<ConfidencePanel vm={vm} />} />
+      <BandBanner vm={completeVm} confidenceSlot={<ConfidencePanel vm={completeVm} />} />
       {vm.groups.map((group) => (
         <FindingGroup key={group.key} group={group} />
       ))}
@@ -33,7 +38,7 @@ function renderAssembledReport(vm: ReturnType<typeof toReportViewModel>) {
 
 describe("product rules: band vs. confidence vs. score", () => {
   it("HIGH vm's band is one of the four literals, with no numeric-score field anywhere on the VM", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
 
     expect(["LOW", "MODERATE", "HIGH", "CRITICAL"]).toContain(vm.band);
     expect(vm).not.toHaveProperty("score");
@@ -42,7 +47,7 @@ describe("product rules: band vs. confidence vs. score", () => {
   });
 
   it("HIGH vm's confidence is a separate value/space from band", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
 
     expect(["Low", "Medium", "High"]).toContain(vm.confidence);
     expect(vm.confidence).not.toBe(vm.band);
@@ -51,7 +56,7 @@ describe("product rules: band vs. confidence vs. score", () => {
 
 describe("product rules: unverifiable findings are neutral, not alarming", () => {
   it("every unverifiable finding's metaLine starts with UNVERIFIED, never WARNING", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const unverifiable = vm.groups.find((g) => g.key === "unverifiable")!.findings;
 
     expect(unverifiable.length).toBeGreaterThan(0);
@@ -64,7 +69,7 @@ describe("product rules: unverifiable findings are neutral, not alarming", () =>
 
 describe("product rules: provenance disclosure for user-supplied claims", () => {
   it("the critical finding's provenanceLabel is exactly the mandated sentence", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const criticalFinding = vm.groups
       .flatMap((g) => g.findings)
       .find((f) => f.severity === "critical")!;
@@ -78,7 +83,7 @@ describe("product rules: provenance disclosure for user-supplied claims", () => 
 
 describe("product rules: defanged sources never carry a live scheme", () => {
   it("every SourceVM with defang:true has a name already defanged, with no bare http(s):// scheme", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const allSources = vm.groups.flatMap((g) => g.findings).flatMap((f) => f.sources);
     const defanged = allSources.filter((s) => s.defang === true);
 
@@ -92,7 +97,7 @@ describe("product rules: defanged sources never carry a live scheme", () => {
 
 describe("product rules: empty groups are omitted, not rendered empty", () => {
   it("LOW vm has no 'What looks suspicious' group heading", () => {
-    const vm = toReportViewModel(SAMPLE_LOW.inv, SAMPLE_LOW.submitted);
+    const vm = toReportViewModel(SAMPLE_LOW.inv);
 
     expect(vm.groups.map((g) => g.heading)).not.toContain("What looks suspicious");
     expect(vm.groups.find((g) => g.key === "suspicious")).toBeUndefined();
@@ -101,7 +106,7 @@ describe("product rules: empty groups are omitted, not rendered empty", () => {
 
 describe("product rules: metaLine composition (severity 'info' is omitted, exact strings pinned)", () => {
   it("a legitimizing info-severity finding's metaLine omits SEVERITY INFO and starts with SUPPORTS LEGITIMACY", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const legitimizingFinding = vm.groups.find((g) => g.key === "legitimizing")!.findings[0];
 
     expect(legitimizingFinding.severity).toBe("info");
@@ -112,7 +117,7 @@ describe("product rules: metaLine composition (severity 'info' is omitted, exact
   });
 
   it("pins the exact metaLine for the suspicious critical finding (F-04, training-fee)", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const criticalFinding = vm.groups
       .flatMap((g) => g.findings)
       .find((f) => f.severity === "critical")!;
@@ -123,19 +128,14 @@ describe("product rules: metaLine composition (severity 'info' is omitted, exact
 });
 
 describe("product rules: submitted rows reflect only present fields", () => {
-  // Note: the Task 2.6 brief expected the adapter to leave `contactChannel`
-  // unmapped, citing "V0" as the reason. That's a stale assumption carried
-  // over from a *different* decision (Task 2.5: flow-context.tsx no longer
-  // derives `contactChannel` from a submitted website URL, because a URL
-  // isn't a channel name — see task-2.5-report.md). The adapter itself
-  // (report-view-model.ts) has always mapped `contactChannel` when present
-  // on `Submitted`, and SAMPLE_HIGH.submitted legitimately sets it to
-  // "Telegram" (task-2.1-report.md confirms the intended row order Job ->
-  // Company -> Recruiter -> Contact channel -> Email). So this asserts the
-  // row IS present for HIGH, not absent — the brief's expectation was wrong,
-  // not the adapter.
-  it("HIGH vm.submitted has the expected labels/values, including the mapped Contact-channel row", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+  // Task 8 (V1): `submitted` is now derived from the DB row's
+  // `inv.submission` (Task 5's `Submission` type: job_text, company_name?,
+  // recruiter_email?, job_url?) instead of a passed-in `Submitted` arg.
+  // That type carries no recruiter-name or contact-channel field at all, so
+  // "Contact channel" (and "Job"/"Recruiter") can never appear as a row —
+  // only Company and Email round-trip.
+  it("HIGH vm.submitted has the expected labels/values, and no Contact-channel row", () => {
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
 
     expect(vm.submitted).toContainEqual({ label: "Company", value: "Acme Global" });
     expect(vm.submitted).toContainEqual({
@@ -143,11 +143,11 @@ describe("product rules: submitted rows reflect only present fields", () => {
       value: "acmeglobalcareers@gmail.com",
       mono: true,
     });
-    expect(vm.submitted).toContainEqual({ label: "Contact channel", value: "Telegram" });
+    expect(vm.submitted.map((r) => r.label)).not.toContain("Contact channel");
   });
 
-  it("a vm built without a submitted argument has an empty submitted array", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv);
+  it("a vm built from a submission with no company_name/recruiter_email has an empty submitted array", () => {
+    const vm = toReportViewModel({ ...SAMPLE_HIGH.inv, submission: { job_text: "x" } });
 
     expect(vm.submitted).toEqual([]);
   });
@@ -155,7 +155,7 @@ describe("product rules: submitted rows reflect only present fields", () => {
 
 describe("product rules: source label falls back to kind when there is no URL", () => {
   it("resolves url:null sources to their kind label", () => {
-    const vm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
     const allSources = vm.groups.flatMap((g) => g.findings).flatMap((f) => f.sources);
 
     // s-hi-02 (whois, url:null) is attached to F-01.
@@ -172,7 +172,7 @@ describe("product rules (rendered tree, Task 3.6): no <a href> anywhere in the a
     ["HIGH", SAMPLE_HIGH],
     ["LOW", SAMPLE_LOW],
   ])("%s report has zero <a href> in the whole rendered document", (_label, sample) => {
-    const vm = toReportViewModel(sample.inv, sample.submitted);
+    const vm = toReportViewModel(sample.inv);
     const { container } = renderAssembledReport(vm);
 
     expect(container.querySelector("a[href]")).toBeNull();
@@ -184,7 +184,7 @@ describe("product rules (rendered tree, Task 3.6): band, never a numeric grade",
     ["HIGH", SAMPLE_HIGH],
     ["LOW", SAMPLE_LOW],
   ])("%s report renders no numeric-grade text and no 'score' word", (_label, sample) => {
-    const vm = toReportViewModel(sample.inv, sample.submitted);
+    const vm = toReportViewModel(sample.inv);
     const { container } = renderAssembledReport(vm);
 
     const text = container.textContent ?? "";
@@ -195,7 +195,7 @@ describe("product rules (rendered tree, Task 3.6): band, never a numeric grade",
 
 describe("product rules (rendered tree, Task 3.6): provenance label count", () => {
   it("HIGH report renders exactly one provenance label; LOW renders zero", () => {
-    const highVm = toReportViewModel(SAMPLE_HIGH.inv, SAMPLE_HIGH.submitted);
+    const highVm = toReportViewModel(SAMPLE_HIGH.inv);
     const { container: highContainer } = renderAssembledReport(highVm);
     const provenanceText = "Based on the conversation you shared — we can't independently verify it.";
     const highMatches = Array.from(highContainer.querySelectorAll("div")).filter(
@@ -203,7 +203,7 @@ describe("product rules (rendered tree, Task 3.6): provenance label count", () =
     );
     expect(highMatches).toHaveLength(1);
 
-    const lowVm = toReportViewModel(SAMPLE_LOW.inv, SAMPLE_LOW.submitted);
+    const lowVm = toReportViewModel(SAMPLE_LOW.inv);
     const { container: lowContainer } = renderAssembledReport(lowVm);
     const lowMatches = Array.from(lowContainer.querySelectorAll("div")).filter(
       (el) => el.textContent === provenanceText,
@@ -225,7 +225,7 @@ describe("product rules (rendered tree, Task 3.6): unverifiable markers are neut
     ["HIGH", SAMPLE_HIGH],
     ["LOW", SAMPLE_LOW],
   ])("%s report: every unverifiable finding's marker dot is grey/muted, and its row is neutral", (_label, sample) => {
-    const vm = toReportViewModel(sample.inv, sample.submitted);
+    const vm = toReportViewModel(sample.inv);
     const { container } = renderAssembledReport(vm);
 
     const unverifiableFindingIds = new Set(
