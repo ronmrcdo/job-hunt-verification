@@ -106,3 +106,15 @@ def test_quota_trigger_denial_log_is_the_observability_signal():
     # LOG survives the transaction rollback the accompanying RAISE EXCEPTION
     # causes), so denials are observable in Postgres logs.
     assert "raise log" in QUOTA
+
+
+def test_abuse_views_revoked_from_client_roles():
+    assert "revoke all on abuse_daily_spend, abuse_signups_hourly from anon, authenticated" in OBS
+
+
+def test_abuse_views_are_security_invoker():
+    assert "security_invoker = true" in OBS
+
+
+def test_verify_rls_has_abuse_authz_case():
+    assert "case 11" in VERIFY

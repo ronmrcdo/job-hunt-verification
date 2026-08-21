@@ -18,10 +18,10 @@ import { TextArea } from "../ui/TextArea";
 import { Button } from "../ui/Button";
 import { useFlowOptional } from "../../lib/flow-context";
 
-function resetCopy(resetsAt: string | null): string {
-  if (!resetsAt) return "You’ve used all 3 checks. Your quota resets soon.";
+function resetCopy(resetsAt: string | null, limit: number): string {
+  if (!resetsAt) return `You’ve used all ${limit} checks. Your quota resets soon.`;
   const d = new Date(resetsAt);
-  return `You’ve used all 3 checks. Your quota resets on ${d.toLocaleDateString()}.`;
+  return `You’ve used all ${limit} checks. Your quota resets on ${d.toLocaleDateString()}.`;
 }
 
 export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
@@ -68,14 +68,14 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
   async function onSubmit(values: SubmissionInput) {
     setFormError(null);
     if (exhausted) {
-      setFormError(resetCopy(quota?.resetsAt ?? null));
+      setFormError(resetCopy(quota?.resetsAt ?? null, quota?.limit ?? 3));
       return;
     }
     const result = await createInvestigation(createClient(), values);
     if ("error" in result) {
       setFormError(
         result.quotaExceeded
-          ? resetCopy(result.resetsAt ?? null)
+          ? resetCopy(result.resetsAt ?? null, quota?.limit ?? 3)
           : "We couldn’t start the check. " + result.error,
       );
       return;

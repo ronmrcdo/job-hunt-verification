@@ -133,7 +133,7 @@ class Persistence:
             cur = await c.execute(
                 "SELECT COALESCE(SUM((cost->>'total_usd')::numeric), 0) AS s "
                 "FROM investigations "
-                "WHERE created_at >= date_trunc('day', now() at time zone 'utc')")
+                "WHERE created_at >= (date_trunc('day', now() at time zone 'utc') at time zone 'utc')")
             row = await cur.fetchone()
         return float(row["s"])
 

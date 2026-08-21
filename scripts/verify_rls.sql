@@ -343,4 +343,31 @@ begin
   raise notice 'Case 10 PASS';
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 11: abuse observability views (finding C1) are not readable by
+-- client roles. As `authenticated`, a SELECT on abuse_daily_spend must
+-- raise insufficient_privilege (42501) — only service_role may read it.
+-- -----------------------------------------------------------------------
+do $$
+declare denied boolean := false;
+begin
+  set local role authenticated;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text,
+    true);
+
+  begin
+    perform * from abuse_daily_spend limit 1;
+  exception when sqlstate '42501' then denied := true;
+  end;
+
+  reset role;
+
+  if not denied then
+    raise exception 'Case 11 FAIL: authenticated could select abuse_daily_spend';
+  end if;
+
+  raise notice 'Case 11 PASS';
+end $$;
+
 rollback;
