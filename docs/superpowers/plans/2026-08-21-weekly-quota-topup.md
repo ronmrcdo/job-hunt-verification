@@ -643,6 +643,9 @@ Create `supabase/migrations/20260821130300_quota_status_weekly_topup.sql`:
 -- disables submit only when both are empty. Mirrors enforce_check_quota()
 -- exactly (same 'weekly' filter + settings). security definer so the count is
 -- over the caller's own rows via auth.uid(); balance via left join (0 if none).
+-- Postgres cannot change a function's OUT-param row type via CREATE OR REPLACE,
+-- so drop the old 3-column quota_status() first (the grant is recreated below).
+drop function if exists quota_status();
 create or replace function quota_status()
 returns table(weekly_used int, weekly_limit int, resets_at timestamptz, top_up_balance int)
 language sql security definer stable
