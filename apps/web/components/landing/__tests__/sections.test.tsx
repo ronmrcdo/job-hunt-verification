@@ -1,25 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ThisWeekRail } from "../ThisWeekRail";
 import { HowItRuns } from "../HowItRuns";
 import { FourBands } from "../FourBands";
 import { ClosingBlock } from "../ClosingBlock";
-
-describe("ThisWeekRail", () => {
-  it("shows the postings-checked stat", () => {
-    render(<ThisWeekRail />);
-    expect(screen.getByText("4,118")).toBeTruthy();
-  });
-
-  it("shows the exact won't-do copy", () => {
-    render(<ThisWeekRail />);
-    expect(
-      screen.getByText(
-        "We never stamp a posting a scam, never give it a score out of a hundred, and never link to a domain under investigation. You get a band, our confidence in it, and the evidence.",
-      ),
-    ).toBeTruthy();
-  });
-});
 
 describe("HowItRuns", () => {
   it("shows the four step numbers", () => {

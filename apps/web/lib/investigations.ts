@@ -150,3 +150,47 @@ export async function recentInvestigations(client: Client, limit = 5): Promise<I
     .limit(limit);
   return (data ?? []) as unknown as Investigation[];
 }
+
+// ---------------------------------------------------------------------------
+// Landing-page stats (the "So far" rail). Aggregates over every completed
+// investigation, read through the anon-executable `public_stats()` RPC — RLS
+// scopes `investigations` to its owner, so a plain select can never produce a
+// cross-user total. Nothing here is per-user or per-row.
+// ---------------------------------------------------------------------------
+
+export type PublicStats = {
+  postingsChecked: number | null;
+  // null when there is nothing to average over yet (no findings / no completed
+  // runs). The rail renders those as an em dash rather than a misleading 0.
+  findingsWithSourcesPct: number | null;
+  medianSeconds: number | null;
+};
+
+const NO_STATS: PublicStats = {
+  postingsChecked: null,
+  findingsWithSourcesPct: null,
+  medianSeconds: null,
+};
+
+export async function publicStats(client: Client): Promise<PublicStats> {
+  // `public_stats` is a DB RPC not present in the hand-authored Database types;
+  // cast narrowly (same pattern as quotaStatus above).
+  const { data, error } = await (client.rpc as unknown as (fn: string) => {
+    single: () => Promise<{
+      data: {
+        postings_checked?: number | null;
+        findings_with_sources_pct?: number | null;
+        median_seconds?: number | null;
+      } | null;
+      error: unknown;
+    }>;
+  })("public_stats").single();
+  // A failed fetch is indistinguishable from "no data yet" for the reader's
+  // purposes, and both must render the placeholder — never a fabricated zero.
+  if (error || !data) return NO_STATS;
+  return {
+    postingsChecked: data.postings_checked ?? null,
+    findingsWithSourcesPct: data.findings_with_sources_pct ?? null,
+    medianSeconds: data.median_seconds ?? null,
+  };
+}

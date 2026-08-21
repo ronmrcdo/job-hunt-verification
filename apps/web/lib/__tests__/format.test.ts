@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatStamp, formatCaseStamp, pad2 } from "../format";
+import { formatStamp, formatCaseStamp, pad2, formatCount, formatPercent, formatDuration } from "../format";
 
 describe("pad2", () => {
   it("zero-pads a single digit", () => {
@@ -31,5 +31,61 @@ describe("formatCaseStamp", () => {
   it("uses the ' · ' separator between date, time+zone, and case id", () => {
     const out = formatCaseStamp("2026-08-18T00:00:00Z", "1234");
     expect(out.split(" · ")).toHaveLength(3);
+  });
+});
+
+// Landing-page stat formatting (the "So far" rail). Each helper takes the
+// nullable RPC value directly and renders the em-dash placeholder for null,
+// so the component never has to branch on missing data itself.
+describe("formatCount", () => {
+  it("groups thousands with commas", () => {
+    expect(formatCount(4118)).toBe("4,118");
+  });
+
+  it("leaves values under a thousand ungrouped", () => {
+    expect(formatCount(0)).toBe("0");
+    expect(formatCount(42)).toBe("42");
+  });
+
+  it("renders an em dash for null", () => {
+    expect(formatCount(null)).toBe("—");
+  });
+});
+
+describe("formatPercent", () => {
+  it("appends a percent sign", () => {
+    expect(formatPercent(96)).toBe("96%");
+    expect(formatPercent(100)).toBe("100%");
+  });
+
+  it("renders an em dash for null", () => {
+    expect(formatPercent(null)).toBe("—");
+  });
+});
+
+describe("formatDuration", () => {
+  it("renders minutes and seconds above a minute", () => {
+    expect(formatDuration(100)).toBe("1m 40s");
+  });
+
+  it("drops the minute part below a minute", () => {
+    expect(formatDuration(40)).toBe("40s");
+    expect(formatDuration(0)).toBe("0s");
+  });
+
+  it("omits a zero seconds remainder", () => {
+    expect(formatDuration(120)).toBe("2m");
+  });
+
+  it("renders hours and minutes above an hour", () => {
+    expect(formatDuration(3720)).toBe("1h 2m");
+  });
+
+  it("rounds fractional seconds", () => {
+    expect(formatDuration(99.6)).toBe("1m 40s");
+  });
+
+  it("renders an em dash for null", () => {
+    expect(formatDuration(null)).toBe("—");
   });
 });

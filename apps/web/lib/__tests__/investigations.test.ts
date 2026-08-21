@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createInvestigation, getInvestigation, recentInvestigations, quotaStatus } from "../investigations";
+import { createInvestigation, getInvestigation, recentInvestigations, quotaStatus, publicStats } from "../investigations";
 
 // Minimal chainable stub. Each terminal (`.single()`, awaited select) resolves
 // with the queued script entry.
@@ -94,5 +94,49 @@ describe("quotaStatus", () => {
     const client = { rpc: () => ({ single: () => Promise.resolve({ data: null }) }) } as any;
     const q = await quotaStatus(client);
     expect(q).toEqual({ weeklyUsed: 0, weeklyLimit: 3, resetsAt: null, topUpBalance: 0 });
+  });
+});
+
+describe("publicStats", () => {
+  it("maps the three-column RPC row to the PublicStats shape", async () => {
+    const client = {
+      rpc: () => ({
+        single: () =>
+          Promise.resolve({
+            data: { postings_checked: 4118, findings_with_sources_pct: 96, median_seconds: 100 },
+            error: null,
+          }),
+      }),
+    } as any;
+    const s = await publicStats(client);
+    expect(s).toEqual({ postingsChecked: 4118, findingsWithSourcesPct: 96, medianSeconds: 100 });
+  });
+
+  it("calls the public_stats RPC", async () => {
+    const rpc = vi.fn(() => ({ single: () => Promise.resolve({ data: null, error: null }) }));
+    await publicStats({ rpc } as any);
+    expect(rpc).toHaveBeenCalledWith("public_stats");
+  });
+
+  it("passes through nulls for a database with no completed investigations", async () => {
+    const client = {
+      rpc: () => ({
+        single: () =>
+          Promise.resolve({
+            data: { postings_checked: 0, findings_with_sources_pct: null, median_seconds: null },
+            error: null,
+          }),
+      }),
+    } as any;
+    const s = await publicStats(client);
+    expect(s).toEqual({ postingsChecked: 0, findingsWithSourcesPct: null, medianSeconds: null });
+  });
+
+  it("nulls every stat when the RPC errors", async () => {
+    const client = {
+      rpc: () => ({ single: () => Promise.resolve({ data: null, error: { message: "boom" } }) }),
+    } as any;
+    const s = await publicStats(client);
+    expect(s).toEqual({ postingsChecked: null, findingsWithSourcesPct: null, medianSeconds: null });
   });
 });

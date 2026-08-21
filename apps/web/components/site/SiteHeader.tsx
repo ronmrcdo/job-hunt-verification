@@ -74,10 +74,12 @@ export function SiteHeader() {
           Prototype.dc.html lines 29-30). */}
       <header className="sticky top-0 z-40 border-b border-rule bg-page">
         <div className="mx-auto flex h-[66px] max-w-page items-center px-8">
-          <div className="flex items-center gap-3">
+          {/* The wordmark is the conventional "back to home" affordance —
+              logo mark and name are one link so either half works. */}
+          <Link href="/" aria-label="Jobverifai home" className="flex items-center gap-3">
             <div className="h-[13px] w-[13px] bg-ink" />
-            <span className="text-[17px] font-bold tracking-[-0.015em]">Wordmark</span>
-          </div>
+            <span className="text-[17px] font-bold tracking-[-0.015em]">Jobverifai</span>
+          </Link>
 
           <span className="ml-4 border-l border-rule pl-4 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
             JOB LEGITIMACY INVESTIGATOR
@@ -106,7 +108,7 @@ export function SiteHeader() {
                 Sign in
               </Link>
             )}
-            <Button variant="primary" onClick={() => router.push("/")}>
+            <Button variant="primary" onClick={() => router.push("/verify")}>
               Check a job
             </Button>
           </nav>
