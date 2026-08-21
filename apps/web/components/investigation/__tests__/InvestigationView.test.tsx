@@ -75,15 +75,34 @@ describe("InvestigationView", () => {
     expect(screen.queryByText(/MODERATE/i)).not.toBeInTheDocument();
   });
 
-  it("names the company from the extraction when the user typed none", () => {
+  it("names the company from entities.company_name over the worker title when both are present", () => {
+    // title and entities.company_name deliberately diverge here so this test can
+    // only pass if entities.company_name is read first, not merely that *some*
+    // fallback fired.
     const investigation = {
       ...SAMPLE_HIGH.inv,
       status: "running",
       submission: { job_text: "x" },
+      title: "Some Other Title",
+      entities: { ...SAMPLE_HIGH.inv.entities, company_name: "Acme Global" },
     };
     setLive(investigation, []);
     renderView({ investigation, steps: [] });
     expect(screen.getByText(/Acme Global · the posting/)).toBeInTheDocument();
+    expect(screen.queryByText(/Some Other Title · the posting/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the worker title when entities has no company name", () => {
+    const investigation = {
+      ...SAMPLE_HIGH.inv,
+      status: "running",
+      submission: { job_text: "x" },
+      title: "Some Other Title",
+      entities: null,
+    };
+    setLive(investigation, []);
+    renderView({ investigation, steps: [] });
+    expect(screen.getByText(/Some Other Title · the posting/)).toBeInTheDocument();
   });
 
   it("falls back to 'The company' when nothing named it", () => {
