@@ -15,4 +15,25 @@ def test_settings_reads_env(monkeypatch):
     assert s.cheap_reasoning_effort == "low"
     assert s.strong_reasoning_effort == "high"
     assert s.max_job_text_chars == 40_000
-    assert s.fetch_timeout_s == 10.0
+    assert s.fetch_timeout_s == 300.0
+    assert s.branch_timeout_s == 600.0
+
+
+def test_structured_output_method_defaults_to_strict_json_schema():
+    # OpenAI-native default; DeepSeek swaps these via env (see .env.example).
+    s = Settings()
+    assert s.structured_output_method == "json_schema"
+    assert s.structured_output_strict is True
+
+
+def test_global_daily_ceiling_default():
+    from app.config import Settings
+    assert Settings().global_daily_usd_ceiling == 25.00
+
+
+def test_structured_output_method_reads_env(monkeypatch):
+    monkeypatch.setenv("STRUCTURED_OUTPUT_METHOD", "function_calling")
+    monkeypatch.setenv("STRUCTURED_OUTPUT_STRICT", "false")
+    s = Settings()
+    assert s.structured_output_method == "function_calling"
+    assert s.structured_output_strict is False

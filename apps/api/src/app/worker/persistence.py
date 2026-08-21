@@ -100,11 +100,15 @@ class Persistence:
         return RawSubmission(**row["submission"]), row["status"]
 
     async def persist_result(self, inv_id, *, assessment, findings, sources, cost,
-                             what_to_verify, check_count=None, status=None) -> None:
+                             what_to_verify, check_count=None, status=None, title=None) -> None:
         # status is optional so this write can double as the terminal write:
         # folding status into the same UPDATE as the results makes the pair
         # atomic on one connection, closing the crash window where a row was
         # left with results but status still 'running' (review Important #4).
+        # title is the worker-derived display label (extracted company name,
+        # falling back to job title); defanged here because it originates in
+        # untrusted posting text and is client-visible, same as every other
+        # column this method writes.
         sources, findings, assessment, what_to_verify = shape(sources, findings, assessment, what_to_verify)
         pool = await db.get_pool()
         args = [
@@ -112,15 +116,36 @@ class Persistence:
             json.dumps([f.model_dump(mode="json") for f in findings]),
             json.dumps([s.model_dump(mode="json") for s in sources]),
             json.dumps(cost), json.dumps(what_to_verify), check_count,
+            defang_text(title) if title else None,
         ]
         set_cols = ("assessment=%s, findings=%s, sources=%s, cost=%s, "
-                    "what_to_verify=%s, check_count=%s")
+                    "what_to_verify=%s, check_count=%s, title=%s")
         if status is not None:
             set_cols += ", status=%s"
             args.append(status)
         args.append(inv_id)
         async with pool.connection() as c:
             await c.execute(f"UPDATE investigations SET {set_cols} WHERE id=%s", tuple(args))
+
+    async def day_spend_usd(self) -> float:
+        pool = await db.get_pool()
+        async with pool.connection() as c:
+            cur = await c.execute(
+                "SELECT COALESCE(SUM((cost->>'total_usd')::numeric), 0) AS s "
+                "FROM investigations "
+                "WHERE created_at >= date_trunc('day', now() at time zone 'utc')")
+            row = await cur.fetchone()
+        return float(row["s"])
+
+    async def mark_capacity_blocked(self, inv_id) -> None:
+        # Terminal 'failed' + a cost marker the client can detect to show
+        # capacity-specific copy (spec §4.3). No graph ran, so no results.
+        pool = await db.get_pool()
+        async with pool.connection() as c:
+            await c.execute(
+                "UPDATE investigations SET status='failed', "
+                "cost='{\"total_usd\":0,\"by_node\":{},\"capacity_blocked\":true}'::jsonb "
+                "WHERE id=%s", (inv_id,))
 
     async def stale_queued(self) -> list[uuid.UUID]:
         """Investigations still 'queued' past `stale_queued_threshold_s` after

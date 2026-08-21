@@ -6,10 +6,13 @@ from datetime import datetime, timezone
 class FakePersistence:
     def __init__(self, submission, cached=None):
         self._sub = submission; self.status = None; self.result = None; self.backfilled = False
+        self.day_spend = 0.0; self.capacity_blocked = False
     async def get_submission(self, inv): return self._sub, "queued"
     async def set_status(self, inv, s): self.status = s
     async def persist_result(self, inv, **kw): self.result = kw
     async def backfill(self, inv): self.backfilled = True
+    async def day_spend_usd(self): return self.day_spend
+    async def mark_capacity_blocked(self, inv): self.capacity_blocked = True
 
 async def test_success_marks_running_then_done_and_persists(monkeypatch):
     p = FakePersistence(RawSubmission(job_text="x"))
@@ -32,6 +35,79 @@ async def test_cache_hit_copies_report_bumps_count_and_writes_no_steps(monkeypat
     status = await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
     assert status == "done" and ran is False and p.result["check_count"] == 4
 
+async def test_persists_title_derived_from_entities(monkeypatch):
+    from app.graph.state import ExtractedEntities
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+    async def run(inv, sub, sink):
+        st = InvestigationState(submission=sub,
+                                entities=ExtractedEntities(company_name="Acme Corp"))
+        return st, "done"
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["title"] == "Acme Corp"
+
+
+async def test_title_falls_back_to_job_title_when_no_company(monkeypatch):
+    from app.graph.state import ExtractedEntities
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+    async def run(inv, sub, sink):
+        st = InvestigationState(submission=sub,
+                                entities=ExtractedEntities(company_name=None,
+                                                           job_title="Senior AI Engineer"))
+        return st, "done"
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["title"] == "Senior AI Engineer"
+
+
+async def test_title_is_none_when_nothing_extracted(monkeypatch):
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+    async def run(inv, sub, sink):
+        return InvestigationState(submission=sub), "done"   # empty entities
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["title"] is None
+
+
+async def test_cache_hit_passes_cached_title(monkeypatch):
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: "k")
+    async def cached(_k): return {"assessment": None, "findings": [], "sources": [],
+                                  "cost": {}, "what_to_verify": [], "title": "Cached Co"}
+    async def bump(_k): return 2
+    monkeypatch.setattr(functions.cache, "get_cached_report", cached)
+    monkeypatch.setattr(functions.cache, "bump_check_count", bump)
+    async def run(inv, sub, sink): return InvestigationState(submission=sub), "done"
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["title"] == "Cached Co"
+
+
+async def test_cache_write_includes_title(monkeypatch):
+    from app.graph.state import ExtractedEntities
+    captured = {}
+    async def fake_put(key, value, **kw): captured["value"] = value
+    async def fake_get(key): return None
+    monkeypatch.setattr(functions.cache, "put_cached_report", fake_put)
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: "k")
+    monkeypatch.setattr(functions.cache, "get_cached_report", fake_get)
+
+    class FakePersistenceLocal:
+        async def get_submission(self, i):
+            return RawSubmission(job_text="x", job_url="http://co.example"), "queued"
+        async def set_status(self, *a): pass
+        async def persist_result(self, *a, **k): pass
+        async def day_spend_usd(self): return 0.0
+        async def mark_capacity_blocked(self, inv): pass
+
+    async def fake_run(inv, sub, p):
+        st = _state_with(sources=[])
+        st.entities = ExtractedEntities(company_name="Acme")
+        return st, "done"
+
+    await functions.handle_requested(uuid.uuid4(), persistence=FakePersistenceLocal(), run=fake_run)
+    assert captured["value"]["title"] == "Acme"
+
+
 async def test_timeout_persists_deadline_exceeded_without_raising(monkeypatch):
     p = FakePersistence(RawSubmission(job_text="x"))
     monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
@@ -45,6 +121,28 @@ async def test_unexpected_error_raises_for_inngest_retry(monkeypatch):
     async def run(inv, sub, sink): raise RuntimeError("boom")
     with pytest.raises(RuntimeError):
         await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+
+
+async def test_global_ceiling_blocks_and_skips_graph(monkeypatch):
+    p = FakePersistence(RawSubmission(job_text="x"))
+    p.day_spend = 999.0
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+    monkeypatch.setattr(functions.settings, "global_daily_usd_ceiling", 25.0)
+    ran = False
+    async def run(inv, sub, sink):
+        nonlocal ran; ran = True; return InvestigationState(submission=sub), "done"
+    status = await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert status == "failed" and p.capacity_blocked is True and ran is False
+
+
+async def test_under_ceiling_runs_normally(monkeypatch):
+    p = FakePersistence(RawSubmission(job_text="x"))
+    p.day_spend = 1.0
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+    monkeypatch.setattr(functions.settings, "global_daily_usd_ceiling", 25.0)
+    async def run(inv, sub, sink): return InvestigationState(submission=sub), "done"
+    status = await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert status == "done" and p.capacity_blocked is False and p.result is not None
 
 
 async def test_handle_failure_sets_status_failed_and_backfills():
@@ -113,6 +211,8 @@ async def test_cache_write_is_shaped_and_defanged(monkeypatch):
             return RawSubmission(job_text="x", job_url="http://co.example"), "queued"
         async def set_status(self, *a): pass
         async def persist_result(self, *a, **k): pass
+        async def day_spend_usd(self): return 0.0
+        async def mark_capacity_blocked(self, inv): pass
 
     async def fake_run(inv, sub, p):
         from app.graph.state import InvestigationState  # returned state carries raw src
@@ -137,6 +237,8 @@ async def test_handle_requested_terminal_write_is_atomic(monkeypatch):
             return RawSubmission(job_text="x"), "queued"   # no job_url -> no cache
         async def set_status(self, inv, status): calls.append(("set_status", status))
         async def persist_result(self, inv, **k): calls.append(("persist_result", k.get("status")))
+        async def day_spend_usd(self): return 0.0
+        async def mark_capacity_blocked(self, inv): pass
 
     async def fake_run(inv, sub, p):
         return _state_with(sources=[]), "done"
