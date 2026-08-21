@@ -44,3 +44,21 @@ def test_quota_trigger_is_before_insert_on_investigations():
 
 def test_verify_rls_has_quota_case():
     assert "case 9" in VERIFY
+
+
+RPC = _sql("20260821121000_quota_status_rpc.sql")
+
+
+def test_quota_status_function_shape():
+    assert "create or replace function quota_status()" in RPC
+    assert "returns table(used int" in RPC
+    assert "resets_at timestamptz" in RPC
+
+
+def test_quota_status_is_security_definer():
+    assert "security definer" in RPC
+
+
+def test_quota_status_granted_to_authenticated_only():
+    assert "revoke all on function quota_status() from public" in RPC
+    assert "grant execute on function quota_status() to authenticated" in RPC
