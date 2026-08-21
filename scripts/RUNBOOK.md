@@ -104,6 +104,14 @@ settings, and is a deliberate **no-op when the URL setting is unset** (so a
 fresh `supabase db reset` inserts cleanly instead of failing the INSERT on
 a webhook error). You wire them per environment before inserts should emit.
 
+> **Prerequisite — pg_net:** `net.http_post` requires the `pg_net`
+> extension. The `investigations_v1` migration enables it
+> (`create extension if not exists pg_net`), so a migrated DB already has
+> it. Wiring the URL below on a DB where pg_net is *absent* flips the
+> trigger from no-op to active and every INSERT then aborts with
+> `schema "net" does not exist` — if you see that, your DB predates the
+> migration; re-run `supabase db reset` (or `create extension pg_net`).
+
 ### 4a. Local webhook wiring
 
 From the DB container / a superuser connection (locally the superuser role
@@ -159,6 +167,77 @@ guard means an unset URL simply skips emission.
    supabase functions logs emit-investigation-requested
    ```
 
+### 4c. Local secrets — the two gaps that keep runs from firing
+
+Even with §4a wired, a fresh local stack has **two unset secrets** that
+silently stop the pipeline. The symptom is: investigations INSERT fine and
+the detail page loads, but the Inngest dashboard shows only the
+`sweep-stale-queued` cron — `run-investigation` never appears — and the
+case sits at `queued` forever. Both are secrets, kept out of git by design;
+wire them locally as below.
+
+**Gap 1 — Edge Function → Inngest (`500 missing inngest config`).** The
+`emit-investigation-requested` function POSTs to
+`${INNGEST_EVENT_URL}/e/${INNGEST_EVENT_KEY}`; with those unset it returns
+500 and no event is emitted (this is exactly the §4b `500` case). Locally
+these come from `[edge_runtime.secrets]` in `supabase/config.toml`, which
+resolves them via `env()` from `supabase/.env` (gitignored):
+
+```bash
+# supabase/.env
+INNGEST_EVENT_URL=http://host.docker.internal:8288   # Inngest dev server on the host
+INNGEST_EVENT_KEY=local-dev                          # dev server accepts any key
+```
+
+`host.docker.internal:8288` (not `localhost`) because the URL must resolve
+from *inside the edge runtime container* — it reaches the host-published
+Inngest port that way. Apply with `supabase stop && supabase start` (edge
+secrets are read at container start, not hot-reloaded). Confirm the §4b
+response flips from `500` to `202`.
+
+**Gotcha — `supabase stop/start` drops pg_net (`schema "net" does not exist`).**
+On the local stack a restart preserves the migration history AND the db-level
+`app.settings.emit_investigation_url` GUC (it lives in `pg_db_role_setting`),
+but does NOT preserve the `pg_net` extension — the `net` schema is gone.
+Because `investigations_v1` is already marked applied, its
+`create extension if not exists pg_net` never re-runs, so the URL setting and
+`net` diverge and the emit trigger aborts EVERY check insert with
+`ERROR: schema "net" does not exist` ("We couldn't start the check.").
+Migration `20260820010000_emit_requested_guard_pg_net.sql` hardens the trigger
+to no-op (with a `WARNING`) when `net` is absent, so a restart can no longer
+break inserts — apply it once with `supabase migration up`. To restore
+*automatic* emission after such a restart, re-create the extension:
+
+```bash
+docker exec -i "$DB" psql -U postgres -d postgres -c "create extension if not exists pg_net;"
+```
+
+**Gap 2 — Worker → OpenAI (`openai.OpenAIError: Missing credentials`).**
+Once an event fires, `run-investigation` starts and the graph crashes at
+the `intake` node if the worker has no model key. `OPENAI_API_KEY` (and
+`TAVILY_API_KEY`) are read from the **root `.env`** by docker-compose's
+`x-api-env`. Set a real key and recreate the worker so it picks up the env:
+
+```bash
+# root .env
+OPENAI_API_KEY=sk-...
+```
+```bash
+docker compose up -d --force-recreate api-worker
+```
+
+**Quick end-to-end sanity check without the app** (also un-sticks a queued
+row): the Inngest event `id` MUST equal the investigation id (§8 idempotency).
+
+```bash
+curl -s -X POST "http://localhost:8288/e/local-dev" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"investigation.requested","id":"<INV_ID>","data":{"investigation_id":"<INV_ID>"}}'
+# then watch the row go queued -> running and steps populate:
+docker exec -i "$DB" psql -U postgres -d postgres \
+  -c "select step_key, status from investigation_steps where investigation_id='<INV_ID>' order by display_order;"
+```
+
 ## 5. Checkpointer schema regeneration (on version bump)
 
 `supabase/migrations/20260819073430_langgraph_checkpointer.sql` was
@@ -181,8 +260,100 @@ past the range this file was written against:
 Never hand-write or guess this DDL from memory — always transcribe from
 the installed package's own migration source or a real `setup()` dump.
 
+## 6. Disposable email signup block and auth configuration
+
+**Supabase Auth settings** (project > Settings > Auth > Providers):
+1. Enable **"Confirm email"** (toggle ON). Unconfirmed users never receive an authenticated session and cannot insert investigations, providing an additional barrier against disposable-email account farms.
+2. Enable **Google OAuth** as the higher-trust sign-up path. OAuth-backed accounts bypass disposable-email checks (the email is pre-verified by Google), reducing signup friction for trusted users while keeping disposable-email abuse cheap.
+
+**Refresh the disposable domains seed list** when new disposable-email services emerge (best practice: quarterly or when abuse patterns spike):
+
+```sql
+-- On a local/staging database:
+delete from blocked_email_domains;
+insert into blocked_email_domains (domain) values
+  ('mailinator.com'), ('guerrillamail.com'), ('10minutemail.com'),
+  ('tempmail.com'), ('trashmail.com'), ('yopmail.com'), ('getnada.com'),
+  ('dispostable.com'), ('maildrop.cc'), ('sharklasers.com'),
+  -- Add new domains here as needed
+  ('domain.example')
+on conflict do nothing;
+```
+
+For hosted Supabase, run this via the SQL Editor or a Postgres client connected to the project database.
+
+## 7. Local LLM (offline / no-OpenAI dev)
+
+An alternative to §4c Gap 2's real `OPENAI_API_KEY`: run an
+OpenAI-compatible model locally and point the worker at it. The
+`llama` service in `docker-compose.yml` runs `llama-server`
+(llama.cpp), exposing `/v1/chat/completions`; the Python services reach it
+in-network at `http://llama:8080/v1`. Nothing in the app code changes — only
+`OPENAI_BASE_URL` and the model ids.
+
+The service is gated behind the `llm` compose **profile**, so a plain
+`docker compose up` neither pulls the image nor downloads a model. It only
+starts when you pass `--profile llm`.
+
+### 7a. Bring it up
+
+Set these in the **root `.env`**, then start with the profile:
+
+```bash
+# root .env
+OPENAI_BASE_URL=http://llama:8080/v1
+CHEAP_MODEL=Qwen2.5-7B-Instruct-Q4_K_M
+STRONG_MODEL=Qwen2.5-7B-Instruct-Q4_K_M
+# Optional overrides (defaults shown):
+# LLAMA_HF_REPO=bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M
+# LLAMA_CTX=16384
+```
+```bash
+docker compose --profile llm up -d
+```
+
+On **first** boot `-hf` downloads the GGUF from Hugging Face into the
+`llama-models` named volume (cached for later runs); the container's
+`/health` stays red until that finishes (a 300s `start_period` covers it).
+Watch progress with `docker compose logs -f llama`.
+
+`OPENAI_API_KEY` may be left empty in this mode — llama-server ignores the
+bearer token. If you already had the worker running against real OpenAI,
+recreate it so it picks up the new env: `docker compose up -d
+--force-recreate api-worker`.
+
+### 7b. Confirm it's serving
+
+```bash
+# from the host (llama publishes on :8081; container port is :8080):
+curl -s http://localhost:8081/v1/models | jq '.data[].id'
+curl -s http://localhost:8081/health
+```
+
+Then run an investigation end-to-end (§4c quick check). The graph's LLM
+nodes now hit the local model; `net._http_response` / Inngest behaviour is
+unchanged.
+
+### 7c. Gotchas
+
+- **`reasoning_effort` is a no-op.** The worker sends
+  `CHEAP_/STRONG_REASONING_EFFORT` on every call; llama.cpp ignores unknown
+  params, so those settings do nothing locally.
+- **Structured output.** `structured_call` uses
+  `method="json_schema", strict=True`; llama.cpp enforces this via a GBNF
+  grammar, so it holds up well — but a small quant may still occasionally
+  fail the two-attempt parse (`StructuredCallError`). Bump the model/quant
+  (`LLAMA_HF_REPO`) if a node parses unreliably.
+- **Model id is loose.** llama-server serves whatever single model is
+  loaded regardless of the request's `model` field, so `CHEAP_MODEL` /
+  `STRONG_MODEL` need only be non-empty — they don't have to match the
+  served id exactly (the cost tracker keys pricing off the string, though).
+- **GPU.** The default image is CPU-only. For CUDA, swap the image to
+  `ghcr.io/ggml-org/llama.cpp:server-cuda` and add a `deploy.resources`
+  GPU reservation to the `llama` service.
+
 ## Summary
 
-None of steps 1-5 above were executed as part of authoring the migration
+None of steps 1-6 above were executed as part of authoring the migration
 files, the verification script, or this runbook. They are provided so the
 operator can apply and verify everything manually.

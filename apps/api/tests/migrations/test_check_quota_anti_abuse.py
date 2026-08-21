@@ -62,3 +62,26 @@ def test_quota_status_is_security_definer():
 def test_quota_status_granted_to_authenticated_only():
     assert "revoke all on function quota_status() from public" in RPC
     assert "grant execute on function quota_status() to authenticated" in RPC
+
+
+BLOCK = _sql("20260821122000_disposable_email_block.sql")
+
+
+def test_blocked_domains_table_and_seed():
+    assert "create table if not exists blocked_email_domains" in BLOCK
+    assert "domain text primary key" in BLOCK
+    assert "mailinator.com" in BLOCK  # representative seed entry
+
+
+def test_reject_disposable_email_raises_pt422():
+    assert "create or replace function reject_disposable_email()" in BLOCK
+    assert "pt422" in BLOCK
+    assert "email_domain_not_allowed" in BLOCK
+
+
+def test_reject_trigger_on_auth_users():
+    assert "before insert on auth.users" in BLOCK
+
+
+def test_verify_rls_has_disposable_case():
+    assert "case 10" in VERIFY

@@ -327,4 +327,20 @@ begin
   delete from investigations where user_id in (a, b, cc);
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 10: disposable-email signup block (spec §4.4). A blocked-domain insert
+-- into auth.users is rejected (PT422) even under the service/owner role, because
+-- a BEFORE INSERT trigger fires regardless of RLS/role.
+-- -----------------------------------------------------------------------
+do $$
+declare blocked boolean := false;
+begin
+  begin
+    insert into auth.users (id, email) values (gen_random_uuid(), 'bot@mailinator.com');
+  exception when sqlstate 'PT422' then blocked := true;
+  end;
+  if not blocked then raise exception 'Case 10 FAIL: blocked domain was allowed'; end if;
+  raise notice 'Case 10 PASS';
+end $$;
+
 rollback;
