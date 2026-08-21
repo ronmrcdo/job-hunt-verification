@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     fetch_timeout_s: float = 300.0
     max_job_text_chars: int = 40_000
+    max_fetched_posting_chars: int = 40_000  # cap on url_fetch page text (mirrors max_job_text_chars)
     branch_timeout_s: float = 600.0
     # Per LLM call: bound it so a stalled/slow model can't hang a branch, and
     # don't retry (a hung call would otherwise multiply). Kept comfortably
