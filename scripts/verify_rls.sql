@@ -281,9 +281,10 @@ do $$
 declare
   a uuid := '00000000-0000-0000-0000-0000000000a9';
   b uuid := '00000000-0000-0000-0000-0000000000b9';
+  cc uuid := '00000000-0000-0000-0000-0000000000c9';
   denied boolean := false;
 begin
-  delete from investigations where user_id in (a, b);
+  delete from investigations where user_id in (a, b, cc);
   -- seed as service role (bypasses the trigger's auth.uid() path: auth.uid() is
   -- null here, so insert directly with explicit user_id + created_at)
   insert into investigations (user_id, submission, status, created_at) values
@@ -306,8 +307,24 @@ begin
   set local role authenticated;
   insert into investigations (submission) values ('{"job_text":"x"}');
   reset role;
+
+  -- Discriminator: user C has 2 in-window + 1 aged-out. If the window filter is
+  -- broken (counts aged-out), C's insert would fail (used=3). Since limit=3, only
+  -- excluding aged-out correctly allows it (used=2 < 3). This guards against a
+  -- regression where the >now() - interval predicate becomes <= or is omitted.
+  reset role;
+  insert into investigations (user_id, submission, status, created_at) values
+    (cc, '{"job_text":"x"}', 'done', now()),
+    (cc, '{"job_text":"x"}', 'done', now()),
+    (cc, '{"job_text":"x"}', 'done', now() - interval '20 days');  -- ages out
+  perform set_config('request.jwt.claims', json_build_object('sub', cc)::text, true);
+  set local role authenticated;
+  insert into investigations (submission) values ('{"job_text":"x"}');
+  reset role;
+  raise notice 'Case 9 (ages-out) PASS';
+
   raise notice 'Case 9 PASS';
-  delete from investigations where user_id in (a, b);
+  delete from investigations where user_id in (a, b, cc);
 end $$;
 
 rollback;
