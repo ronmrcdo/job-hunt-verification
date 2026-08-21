@@ -11,17 +11,33 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submissionSchema, type SubmissionInput } from "../../lib/validation";
-import { createInvestigation } from "../../lib/investigations";
+import { createInvestigation, quotaStatus, type QuotaStatus } from "../../lib/investigations";
 import { createClient } from "../../lib/supabase/client";
 import { TextField } from "../ui/TextField";
 import { TextArea } from "../ui/TextArea";
 import { Button } from "../ui/Button";
 import { useFlowOptional } from "../../lib/flow-context";
 
+function resetCopy(resetsAt: string | null): string {
+  if (!resetsAt) return "You’ve used all 3 checks. Your quota resets soon.";
+  const d = new Date(resetsAt);
+  return `You’ve used all 3 checks. Your quota resets on ${d.toLocaleDateString()}.`;
+}
+
 export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
   const router = useRouter();
   const flow = useFlowOptional();
   const [formError, setFormError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<QuotaStatus | null>(null);
+  useEffect(() => {
+    let active = true;
+    quotaStatus(createClient())
+      .then((q) => { if (active) setQuota(q); })
+      .catch(() => { /* non-blocking: the DB trigger is the real gate */ });
+    return () => { active = false; };
+  }, []);
+  const remaining = quota ? Math.max(quota.limit - quota.used, 0) : null;
+  const exhausted = remaining === 0;
   const {
     control,
     handleSubmit,
@@ -51,9 +67,17 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
 
   async function onSubmit(values: SubmissionInput) {
     setFormError(null);
+    if (exhausted) {
+      setFormError(resetCopy(quota?.resetsAt ?? null));
+      return;
+    }
     const result = await createInvestigation(createClient(), values);
     if ("error" in result) {
-      setFormError("We couldn’t start the check. " + result.error);
+      setFormError(
+        result.quotaExceeded
+          ? resetCopy(result.resetsAt ?? null)
+          : "We couldn’t start the check. " + result.error,
+      );
       return;
     }
     flow?.reset();
@@ -144,9 +168,24 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
         </div>
       ) : null}
 
+      {quota ? (
+        <p className="text-[13px] leading-[1.5] text-ink-soft">
+          {remaining} of {quota.limit} checks left
+          {quota.resetsAt ? ` · resets ${new Date(quota.resetsAt).toLocaleDateString()}` : ""}
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-3">
         <div className="flex flex-1 basis-[320px] items-stretch border border-ink">
-          <Button variant="primary" size="wide" type="submit" className="flex-1" disabled={isSubmitting}>
+          <Button
+            variant="primary"
+            size="wide"
+            type="submit"
+            className="flex-1"
+            disabled={exhausted}
+            pending={isSubmitting}
+            pendingLabel="RUNNING THE CHECK…"
+          >
             RUN THE CHECK
           </Button>
         </div>
