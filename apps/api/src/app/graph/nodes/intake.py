@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+from app.checks.job_boards import is_non_employer_domain
 from app.config import settings
 from app.graph.state import ExtractedEntities, InvestigationState
 from app.llm import cheap_model, structured_call
@@ -36,6 +37,28 @@ def _email_domain(email: str | None) -> str | None:
     return email.rsplit("@", 1)[1].lower() if email and "@" in email else None
 
 
+def _employer_domain(*candidates: str | None) -> str | None:
+    """First candidate that can plausibly be the employer's own domain.
+
+    Every source of a company domain can hand us a host that belongs to a job
+    board or an ATS rather than to the company: the LLM reads `company_domain`
+    off a posting hosted on LinkedIn/Indeed, the recruiter-email fallback
+    picks it up from an ATS no-reply sender, and `candidate_real_domain` --
+    the *reference* the homoglyph check measures against -- comes from the
+    same page. A board host in either slot sends the deterministic checks
+    (domain age, MX, homoglyph, email-domain match) off to measure the wrong
+    company, and as a homoglyph reference it fabricates hits outright: the
+    legitimate "indeedhq.com" is 2 edits from "indeed.com". They are dropped
+    rather than carried forward -- an absent domain degrades those checks to
+    "unavailable", which is the correct reading (spec §7).
+    """
+    for c in candidates:
+        d = (c or "").strip().lower()
+        if d and not is_non_employer_domain(d):
+            return d
+    return None
+
+
 async def intake_extraction(state: InvestigationState) -> dict:
     sub = state.submission
     job_text = sub.job_text[: settings.max_job_text_chars]
@@ -52,8 +75,10 @@ async def intake_extraction(state: InvestigationState) -> dict:
 
     entities = ExtractedEntities(
         company_name=llm_out.company_name or sub.company_name,
-        company_domain=llm_out.company_domain or _email_domain(sub.recruiter_email),
-        candidate_real_domain=llm_out.candidate_real_domain,
+        company_domain=_employer_domain(
+            llm_out.company_domain, _email_domain(sub.recruiter_email)
+        ),
+        candidate_real_domain=_employer_domain(llm_out.candidate_real_domain),
         recruiter_email=sub.recruiter_email,  # verbatim from immutable submission
         job_title=llm_out.job_title,
         salary=llm_out.salary,
