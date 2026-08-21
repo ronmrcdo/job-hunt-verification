@@ -17,6 +17,10 @@ class _IntakeLLM(BaseModel):
     )
     job_title: str | None = None
     salary: str | None = None
+    recruiter_name: str | None = None
+    contact_channel: str | None = Field(
+        None, description="Where the recruiter asks to be contacted, e.g. Telegram, WhatsApp, email"
+    )
     key_phrases: list[str] = Field(default_factory=list)
 
 
@@ -53,6 +57,8 @@ async def intake_extraction(state: InvestigationState) -> dict:
         recruiter_email=sub.recruiter_email,  # verbatim from immutable submission
         job_title=llm_out.job_title,
         salary=llm_out.salary,
+        recruiter_name=llm_out.recruiter_name,
+        contact_channel=llm_out.contact_channel,
         job_url=sub.job_url,
         key_phrases=llm_out.key_phrases,
     )

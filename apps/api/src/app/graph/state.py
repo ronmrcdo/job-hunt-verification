@@ -26,6 +26,8 @@ class ExtractedEntities(BaseModel):
     recruiter_email: str | None = None
     job_title: str | None = None
     salary: str | None = None
+    recruiter_name: str | None = None
+    contact_channel: str | None = None
     job_url: str | None = None
     key_phrases: list[str] = Field(default_factory=list)
 
