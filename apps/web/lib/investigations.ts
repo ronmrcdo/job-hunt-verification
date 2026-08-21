@@ -36,6 +36,9 @@ export type Investigation = {
   id: string;
   user_id: string;
   status: string;
+  // Worker-derived display label (extracted company name, else job title);
+  // null when the posting named neither — the UI renders "Untitled posting".
+  title: string | null;
   submission: Submission;
   assessment: FinalAssessment | null;
   findings: Finding[] | null;
@@ -57,16 +60,39 @@ export type InvestigationStep = {
 
 type Client = SupabaseClient<Database>;
 
+export type QuotaStatus = { used: number; limit: number; resetsAt: string | null };
+
+export async function quotaStatus(client: Client): Promise<QuotaStatus> {
+  // `quota_status` is a DB RPC not present in the hand-authored Database types;
+  // cast narrowly (same pattern as the `as unknown as` casts elsewhere here).
+  const { data } = await (client.rpc as unknown as (fn: string) => {
+    single: () => Promise<{ data: { used?: number; limit?: number; resets_at?: string | null } | null }>;
+  })("quota_status").single();
+  const row = data ?? {};
+  return { used: row.used ?? 0, limit: row.limit ?? 3, resetsAt: row.resets_at ?? null };
+}
+
+export type CreateResult =
+  | { id: string }
+  | { error: string; quotaExceeded?: boolean; resetsAt?: string | null };
+
 export async function createInvestigation(
   client: Client,
   submission: SubmissionInput,
-): Promise<{ id: string } | { error: string }> {
+): Promise<CreateResult> {
   const { data, error } = await client
     .from("investigations")
     .insert({ submission })
     .select("id")
     .single();
-  if (error || !data) return { error: error?.message ?? "Could not start the check." };
+  if (error || !data) {
+    // Over-quota surfaces as SQLSTATE PT429 (HTTP 429). Match on code first,
+    // fall back to the message so UX survives a PostgREST mapping change.
+    if (error?.code === "PT429" || error?.message === "check_quota_exceeded") {
+      return { error: "check_quota_exceeded", quotaExceeded: true, resetsAt: error?.hint ?? null };
+    }
+    return { error: error?.message ?? "Could not start the check." };
+  }
   return { id: (data as { id: string }).id };
 }
 
