@@ -95,6 +95,34 @@ async def test_persist_result_writes_shaped_sources(monkeypatch):
     assert "http://" not in joined            # defanged
 
 
+async def test_persist_result_writes_defanged_title(monkeypatch):
+    pool = FakePool()
+    async def fake_get_pool(): return pool
+    monkeypatch.setattr("app.worker.persistence.db.get_pool", fake_get_pool)
+    p = Persistence()
+    await p.persist_result(uuid.uuid4(), assessment=None, findings=[], sources=[],
+                           cost={}, what_to_verify=[], check_count=None,
+                           title="Acme http://evil.example")
+    update = next(c for c in pool.store if "UPDATE INVESTIGATIONS" in c[0].upper())
+    sql = " ".join(update[0].split()).lower()
+    assert "title=" in sql
+    joined = " ".join(str(x) for x in update[1]).lower()
+    assert "acme" in joined            # the derived title is written
+    assert "http://" not in joined     # ...and defanged like other client-visible text
+
+
+async def test_persist_result_title_defaults_to_null(monkeypatch):
+    pool = FakePool()
+    async def fake_get_pool(): return pool
+    monkeypatch.setattr("app.worker.persistence.db.get_pool", fake_get_pool)
+    p = Persistence()
+    await p.persist_result(uuid.uuid4(), assessment=None, findings=[], sources=[],
+                           cost={}, what_to_verify=[], check_count=None)
+    update = next(c for c in pool.store if "UPDATE INVESTIGATIONS" in c[0].upper())
+    assert "title=" in " ".join(update[0].split()).lower()
+    assert None in update[1]           # no title supplied -> stored NULL
+
+
 async def test_set_status_running_stamps_started_at(monkeypatch):
     pool = FakePool()
     async def fake_get_pool(): return pool

@@ -358,16 +358,36 @@ begin
 
   begin
     perform * from abuse_daily_spend limit 1;
+    perform * from abuse_signups_hourly limit 1;
   exception when sqlstate '42501' then denied := true;
   end;
 
   reset role;
 
   if not denied then
-    raise exception 'Case 11 FAIL: authenticated could select abuse_daily_spend';
+    raise exception 'Case 11 FAIL: authenticated could select an abuse_* view';
   end if;
 
   raise notice 'Case 11 PASS';
+end $$;
+
+-- -----------------------------------------------------------------------
+-- Case 12: the intended reader (service_role) can STILL read both abuse
+-- views (review Important #2). abuse_signups_hourly reads auth.users, so
+-- dropping security_invoker was required for this to work under
+-- service_role — this case is the regression guard for that fix.
+-- -----------------------------------------------------------------------
+do $$
+begin
+  set local role service_role;
+  perform * from abuse_daily_spend limit 1;
+  perform * from abuse_signups_hourly limit 1;
+  perform * from abuse_snapshot();
+  reset role;
+  raise notice 'Case 12 PASS';
+exception when others then
+  reset role;
+  raise exception 'Case 12 FAIL: service_role could not read abuse views/snapshot (%: %)', sqlstate, sqlerrm;
 end $$;
 
 rollback;

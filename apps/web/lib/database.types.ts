@@ -1,6 +1,7 @@
 // Supabase table types — HAND-AUTHORED to match:
 //   supabase/migrations/20260819073420_investigations_v1.sql
 //   supabase/migrations/20260819080000_investigations_sources.sql
+//   supabase/migrations/20260821000000_investigations_title.sql
 // OPERATOR: regenerate against the local stack and overwrite this file:
 //   supabase gen types typescript --local > apps/web/lib/database.types.ts
 // The jsonb payload shapes mirror apps/api/src/app/graph/state.py.
@@ -15,6 +16,7 @@ export interface Database {
           id: string;
           user_id: string;
           status: string;
+          title: string | null;
           submission: Json;
           assessment: Json | null;
           findings: Json | null;

@@ -152,7 +152,15 @@ alter publication supabase_realtime add table investigation_steps;
 -- When the URL setting is unset the trigger is a deliberate no-op: a fresh
 -- `supabase db reset` (or any env that has not wired the webhook yet) still
 -- inserts cleanly instead of failing the whole INSERT on a webhook error.
+--
+-- Prerequisite: pg_net supplies `net.http_post`. Hosted Supabase pre-installs
+-- it (this is a harmless no-op there); the local CLI stack does NOT, so without
+-- this line the `net` schema is absent and, once the webhook URL is wired, the
+-- trigger aborts every INSERT with "schema \"net\" does not exist". The install
+-- script self-creates the `net` schema, so no WITH SCHEMA is needed.
 -- ---------------------------------------------------------------------------
+create extension if not exists pg_net;
+
 create or replace function emit_investigation_requested()
 returns trigger language plpgsql as $$
 declare

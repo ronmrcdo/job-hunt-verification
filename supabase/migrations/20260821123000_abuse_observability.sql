@@ -10,8 +10,13 @@ create or replace view abuse_daily_spend
   group by 1
   order by 1 desc;
 
-create or replace view abuse_signups_hourly
-  with (security_invoker = true) as
+-- NOTE: unlike abuse_daily_spend, this view does NOT use security_invoker.
+-- It reads auth.users, which service_role (the only granted reader below) is
+-- not granted SELECT on — security_invoker would run the underlying read with
+-- the invoker's own rights and fail with 42501. Running as the view owner
+-- (postgres) reads auth.users fine; the leak is closed by the REVOKE from
+-- anon/authenticated below, not by security_invoker (review Important #2).
+create or replace view abuse_signups_hourly as
   select date_trunc('hour', created_at) as hour, count(*) as signups
   from auth.users
   group by 1

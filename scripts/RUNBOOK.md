@@ -264,7 +264,9 @@ the installed package's own migration source or a real `setup()` dump.
 
 **Supabase Auth settings** (project > Settings > Auth > Providers):
 1. Enable **"Confirm email"** (toggle ON). Unconfirmed users never receive an authenticated session and cannot insert investigations, providing an additional barrier against disposable-email account farms.
-2. Enable **Google OAuth** as the higher-trust sign-up path. OAuth-backed accounts bypass disposable-email checks (the email is pre-verified by Google), reducing signup friction for trusted users while keeping disposable-email abuse cheap.
+2. Enable **Google OAuth** as the higher-trust sign-up path. In practice a Google sign-up carries a Google-domain (or workspace) email, which is not on the disposable list, so it passes the block; the block is not skipped for OAuth — the `before insert on auth.users` trigger has no provider carve-out and fires for every insert path (email, OAuth, and admin/service-role user creation alike).
+
+**How the block surfaces to the user (important).** The `reject_disposable_email()` trigger raises `PT422`/`email_domain_not_allowed`, but sign-ups go through **GoTrue (the Auth API), not PostgREST**, so the `PTxyz`→HTTP-status mapping does **not** apply. GoTrue wraps a trigger error as a generic signup failure (typically HTTP 500 "Database error saving new user"), and the account is **not** created. The account-farm defense (no verified account, no `auth.uid()`, no checks) holds either way, but the client cannot currently show the specific "use a permanent email" copy purely from the response. If that precise UX is required later, add a **pre-signup check** (an Edge Function or an RPC the sign-up form calls before `signUp`) that reads `blocked_email_domains` and returns a clean 422 — the trigger stays as the authoritative backstop. The web sign-up form should treat a generic signup error defensively and suggest using a permanent (non-disposable) email.
 
 **Refresh the disposable domains seed list** when new disposable-email services emerge (best practice: quarterly or when abuse patterns spike):
 

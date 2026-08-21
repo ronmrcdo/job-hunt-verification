@@ -42,3 +42,12 @@ STARTED = (MIGRATIONS / "20260819082000_investigations_started_at.sql").read_tex
 def test_started_at_column_added_and_nulled_in_defaults_trigger():
     assert "add column if not exists started_at timestamptz" in STARTED
     assert "new.started_at := null" in STARTED  # client can't seed it
+
+
+TITLE = (MIGRATIONS / "20260821000000_investigations_title.sql").read_text().lower() \
+    if (MIGRATIONS / "20260821000000_investigations_title.sql").exists() else ""
+
+
+def test_title_column_added_and_nulled_in_defaults_trigger():
+    assert "add column if not exists title text" in TITLE
+    assert "new.title := null" in TITLE  # worker-set only; client can't seed it
