@@ -35,3 +35,40 @@ def test_app_setting_helper_is_security_definer_with_default():
 def test_app_settings_not_client_writable():
     assert "alter table app_settings enable row level security" in APP
     assert "revoke all on app_settings from anon, authenticated" in APP
+
+
+STATE = _sql("20260821130100_user_check_quota.sql")
+
+
+def test_user_check_quota_table():
+    assert "create table if not exists user_check_quota" in STATE
+    assert "user_id uuid primary key references auth.users(id) on delete cascade" in STATE
+    assert "top_up_balance int not null default 0 check (top_up_balance >= 0)" in STATE
+
+
+def test_user_check_quota_rls_select_own_no_client_write():
+    assert "alter table user_check_quota enable row level security" in STATE
+    assert "for select using (user_id = auth.uid())" in STATE
+    assert "revoke all on user_check_quota from anon, authenticated" in STATE
+    assert "grant select on user_check_quota to authenticated" in STATE
+
+
+def test_quota_source_column_added():
+    assert "add column if not exists quota_source text" in STATE
+    assert "check (quota_source in ('weekly', 'top_up'))" in STATE
+
+
+def test_provision_trigger_seeds_default_balance():
+    assert "create or replace function provision_user_quota()" in STATE
+    assert "security definer" in STATE
+    assert "app_setting('default_top_up_balance', '0')" in STATE
+    assert "trigger trg_provision_user_quota after insert on auth.users" in STATE
+
+
+def test_existing_users_backfilled():
+    assert "insert into user_check_quota (user_id, top_up_balance)" in STATE
+    assert "from auth.users" in STATE
+
+
+def test_verify_rls_has_provisioning_case():
+    assert "case 13" in VERIFY
