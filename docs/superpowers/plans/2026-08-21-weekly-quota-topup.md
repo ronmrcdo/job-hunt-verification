@@ -938,7 +938,8 @@ def test_grant_top_up_is_definer_service_role_only():
 
 def test_grant_top_up_upserts_and_adds():
     assert "on conflict (user_id) do update" in GRANT
-    assert "user_check_quota.top_up_balance + excluded.top_up_balance" in GRANT
+    assert "top_up_balance = user_check_quota.top_up_balance + n" in GRANT
+    assert "values (target_user, greatest(n, 0))" in GRANT
 
 
 def test_verify_rls_has_grant_case():
@@ -955,10 +956,17 @@ Expected: FAIL — the three new tests fail. Earlier tests PASS.
 Create `supabase/migrations/20260821130400_grant_top_up.sql`:
 
 ```sql
--- Operator/admin grant of top-up checks (spec §4.7). service_role only — this
--- is the seam a future purchase/billing flow would credit into. Atomic upsert;
--- n may be negative to claw back, floored by the >= 0 check on the column (a
--- claw-back below zero raises rather than going negative).
+-- Operator/admin grant of top-up checks (spec §4.7). service_role only — the
+-- seam a future purchase/billing flow would credit into. n may be negative to
+-- claw back. NOTE: Postgres checks the column's `>= 0` constraint against the
+-- raw VALUES tuple during ON CONFLICT's speculative insert, before conflict
+-- resolution (and CHECKs aren't deferrable), so a literal negative n in VALUES
+-- would raise even when the update nets non-negative. Floor the VALUES tuple
+-- with greatest(n,0) (safe on the no-conflict insert path — a brand-new row
+-- cannot be clawed below 0) and do the real arithmetic in DO UPDATE using the
+-- parameter n directly (NOT excluded.top_up_balance, which equals the floored
+-- value). The final updated row is still checked, so existing + n < 0 raises
+-- check_violation as intended.
 create or replace function grant_top_up(target_user uuid, n int)
 returns int language plpgsql security definer
 set search_path = public
@@ -966,9 +974,9 @@ as $$
 declare new_balance int;
 begin
   insert into user_check_quota (user_id, top_up_balance)
-  values (target_user, n)
+  values (target_user, greatest(n, 0))
   on conflict (user_id) do update
-    set top_up_balance = user_check_quota.top_up_balance + excluded.top_up_balance,
+    set top_up_balance = user_check_quota.top_up_balance + n,
         updated_at = now()
   returning top_up_balance into new_balance;
   return new_balance;
