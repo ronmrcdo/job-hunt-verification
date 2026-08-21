@@ -473,4 +473,36 @@ begin
   raise notice 'Case 14 PASS';
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 15: quota_status() reports both buckets (spec §4.2). User has 2 weekly
+-- rows in-window and a top_up_balance of 4; quota_status() must return
+-- weekly_used=2, weekly_limit=3, top_up_balance=4, resets_at not null.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-0000000000f5';
+  r record;
+begin
+  delete from auth.users where id = u;
+  insert into auth.users (id, email) values (u, 'status@example.com');  -- provisions balance 0
+  update user_check_quota set top_up_balance = 4 where user_id = u;     -- seed balance directly; grant_top_up() lands in Task 5
+  insert into investigations (user_id, submission, status, created_at, quota_source) values
+    (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (u, '{"job_text":"x"}', 'done', now(), 'weekly');
+
+  perform set_config('request.jwt.claims', json_build_object('sub', u)::text, true);
+  set local role authenticated;
+  select * into r from quota_status();
+  reset role;
+
+  if r.weekly_used <> 2 or r.weekly_limit <> 3 or r.top_up_balance <> 4 or r.resets_at is null then
+    raise exception 'Case 15 FAIL: got weekly_used=% weekly_limit=% top_up=% resets_at=%',
+      r.weekly_used, r.weekly_limit, r.top_up_balance, r.resets_at;
+  end if;
+
+  delete from investigations where user_id = u;   -- investigations FK has no ON DELETE CASCADE; clear before the user delete
+  delete from auth.users where id = u;
+  raise notice 'Case 15 PASS';
+end $$;
+
 rollback;
