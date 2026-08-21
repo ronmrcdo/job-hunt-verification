@@ -51,7 +51,7 @@
 
 ---
 
-## Task A: Settings table (`app_settings` + `app_setting()`)
+## Task 1: Settings table (`app_settings` + `app_setting()`)
 
 **Files:**
 - Create: `supabase/migrations/20260821130000_app_settings.sql`
@@ -151,7 +151,7 @@ grant execute on function app_setting(text, text) to service_role;
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd apps/api && pytest tests/migrations/test_weekly_quota_topup.py -v`
-Expected: PASS (the four Task A tests; later-task tests are not yet written).
+Expected: PASS (the four Task 1 tests; later-task tests are not yet written).
 
 - [ ] **Step 5: Apply to the local stack and sanity-check**
 
@@ -170,7 +170,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 
 ---
 
-## Task B: Top-up state, `quota_source` column, provisioning + backfill
+## Task 2: Top-up state, `quota_source` column, provisioning + backfill
 
 **Files:**
 - Create: `supabase/migrations/20260821130100_user_check_quota.sql`
@@ -178,7 +178,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 - Modify: `scripts/verify_rls.sql` (new Case 13)
 
 **Interfaces:**
-- Consumes: `app_setting()` from Task A.
+- Consumes: `app_setting()` from Task 1.
 - Produces: table `user_check_quota(user_id uuid pk → auth.users on delete cascade, top_up_balance int not null default 0 check (top_up_balance >= 0), updated_at timestamptz)`; column `investigations.quota_source text check (quota_source in ('weekly','top_up'))`; trigger `trg_provision_user_quota after insert on auth.users`.
 
 - [ ] **Step 1: Write the failing test**
@@ -226,7 +226,7 @@ def test_verify_rls_has_provisioning_case():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd apps/api && pytest tests/migrations/test_weekly_quota_topup.py -v`
-Expected: FAIL — the six new tests fail (`STATE` is `""`; `case 13` not in `VERIFY`). Task A tests still PASS.
+Expected: FAIL — the six new tests fail (`STATE` is `""`; `case 13` not in `VERIFY`). Task 1 tests still PASS.
 
 - [ ] **Step 3: Write the migration**
 
@@ -344,7 +344,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 
 ---
 
-## Task C: Two-bucket enforcement (`enforce_check_quota()` rewrite)
+## Task 3: Two-bucket enforcement (`enforce_check_quota()` rewrite)
 
 **Files:**
 - Create: `supabase/migrations/20260821130200_enforce_check_quota_weekly_topup.sql`
@@ -352,7 +352,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 - Modify: `scripts/verify_rls.sql` — **update Case 9** (seed rows must stamp `quota_source='weekly'`) and add Case 14 (top-up fallthrough + double-spend).
 
 **Interfaces:**
-- Consumes: `app_setting()` (Task A); `user_check_quota`, `investigations.quota_source` (Task B).
+- Consumes: `app_setting()` (Task 1); `user_check_quota`, `investigations.quota_source` (Task 2).
 - Produces: `enforce_check_quota()` (CREATE OR REPLACE) — weekly-first → top-up (row-locked decrement) → `PT429`, stamps `NEW.quota_source`, `SECURITY DEFINER`. The existing `trg_enforce_check_quota before insert on investigations` binding is reused (replacing the function keeps the trigger).
 
 - [ ] **Step 1: Write the failing test**
@@ -533,7 +533,7 @@ declare
 begin
   delete from auth.users where id = u;                -- cascade clears quota row
   insert into auth.users (id, email) values (u, 'topup@example.com');  -- provisions balance 0
-  update user_check_quota set top_up_balance = 2 where user_id = u;    -- seed balance directly (owner bypasses RLS); grant_top_up() lands in Task E
+  update user_check_quota set top_up_balance = 2 where user_id = u;    -- seed balance directly (owner bypasses RLS); grant_top_up() lands in Task 5
   -- weekly exhausted: three in-window weekly rows
   insert into investigations (user_id, submission, status, created_at, quota_source) values
     (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
@@ -584,7 +584,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 
 ---
 
-## Task D: `quota_status()` new shape + web UX
+## Task 4: `quota_status()` new shape + web UX
 
 **Files:**
 - Create: `supabase/migrations/20260821130300_quota_status_weekly_topup.sql`
@@ -696,7 +696,7 @@ declare
 begin
   delete from auth.users where id = u;
   insert into auth.users (id, email) values (u, 'status@example.com');  -- provisions balance 0
-  update user_check_quota set top_up_balance = 4 where user_id = u;     -- seed balance directly; grant_top_up() lands in Task E
+  update user_check_quota set top_up_balance = 4 where user_id = u;     -- seed balance directly; grant_top_up() lands in Task 5
   insert into investigations (user_id, submission, status, created_at, quota_source) values
     (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
     (u, '{"job_text":"x"}', 'done', now(), 'weekly');
@@ -904,7 +904,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 
 ---
 
-## Task E: `grant_top_up()` admin RPC + operator docs
+## Task 5: `grant_top_up()` admin RPC + operator docs
 
 **Files:**
 - Create: `supabase/migrations/20260821130400_grant_top_up.sql`
@@ -913,7 +913,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 - Modify: `scripts/RUNBOOK.md`
 
 **Interfaces:**
-- Consumes: `user_check_quota` (Task B).
+- Consumes: `user_check_quota` (Task 2).
 - Produces: `grant_top_up(target_user uuid, n int) returns int` (SECURITY DEFINER, `service_role` only) — atomic add-to-balance; the `>= 0` check floors claw-backs. Exercised by Case 16 (this task); Cases 14/15 seed balances directly, so this function has no earlier dependency.
 
 - [ ] **Step 1: Write the failing test**
@@ -1074,19 +1074,19 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 ## Self-Review
 
 **1. Spec coverage:**
-- §4.1 two-bucket enforce (weekly-first, top-up, PT429, stamp, definer, FOR UPDATE, null-uid guard) → Task C.
-- §4.2 quota_status 4-column shape + web UX (weekly + bonus copy, disable only when both empty, error mapping) → Task D.
-- §4.7 `user_check_quota` + RLS → Task B; provisioning + backfill → Task B; `app_settings` + `app_setting()` → Task A; `grant_top_up()` → Task E.
+- §4.1 two-bucket enforce (weekly-first, top-up, PT429, stamp, definer, FOR UPDATE, null-uid guard) → Task 3.
+- §4.2 quota_status 4-column shape + web UX (weekly + bonus copy, disable only when both empty, error mapping) → Task 4.
+- §4.7 `user_check_quota` + RLS → Task 2; provisioning + backfill → Task 2; `app_settings` + `app_setting()` → Task 1; `grant_top_up()` → Task 5.
 - §5 migration list (all five files, `quota_source` column, CREATE OR REPLACE) → Tasks A–E.
-- §7 operator config (app_settings edits, grant_top_up, default_top_up_balance) → Task E Step 7.
+- §7 operator config (app_settings edits, grant_top_up, default_top_up_balance) → Task 5 Step 7.
 - §8 testing (migration text-assertions, verify_rls behavioral incl. double-spend + claw-back + service-role-only, vitest) → Tasks A–E.
 - §9a phases A–E → Tasks A–E one-to-one.
-- §10 risk (historical NULL `quota_source`) → accepted; Case 9 seeds updated to `weekly` (Task C Step 5) so behavioral checks stay valid.
+- §10 risk (historical NULL `quota_source`) → accepted; Case 9 seeds updated to `weekly` (Task 3 Step 5) so behavioral checks stay valid.
 
 **2. Placeholder scan:** No TBD/TODO; every SQL, TS, and test step contains full content.
 
-**3. Type consistency:** `QuotaStatus` fields (`weeklyUsed`, `weeklyLimit`, `resetsAt`, `topUpBalance`) match between `investigations.ts` (Task D Step 9), its test (Step 7), and `NewCheckForm.tsx` (Step 13). RPC columns (`weekly_used`, `weekly_limit`, `resets_at`, `top_up_balance`) match between the migration (Task D Step 3), the DB test (Step 1), Case 15 (Step 5), and the lib mapping (Step 9). `grant_top_up(uuid, int)` signature matches between migration (Task E Step 3), tests (Step 1), and Cases 14/15/16.
+**3. Type consistency:** `QuotaStatus` fields (`weeklyUsed`, `weeklyLimit`, `resetsAt`, `topUpBalance`) match between `investigations.ts` (Task 4 Step 9), its test (Step 7), and `NewCheckForm.tsx` (Step 13). RPC columns (`weekly_used`, `weekly_limit`, `resets_at`, `top_up_balance`) match between the migration (Task 4 Step 3), the DB test (Step 1), Case 15 (Step 5), and the lib mapping (Step 9). `grant_top_up(uuid, int)` signature matches between migration (Task 5 Step 3), tests (Step 1), and Cases 14/15/16.
 
-**Cross-task dependency note:** none. `grant_top_up()` (Task E) is exercised only by its own Case 16; Cases 14 & 15 seed balances with a direct `update user_check_quota` (owner bypasses RLS), so every task's behavioral run is self-contained.
+**Cross-task dependency note:** none. `grant_top_up()` (Task 5) is exercised only by its own Case 16; Cases 14 & 15 seed balances with a direct `update user_check_quota` (owner bypasses RLS), so every task's behavioral run is self-contained.
 
 **Environment note (execution):** the `supabase` CLI and `psql` are not on PATH; only the running containers are. Behavioral steps run migrations and `verify_rls.sql` via `docker exec -i supabase_db_job-hunt-verification psql -U postgres -d postgres`. Migration text tests run with `cd apps/api && uv run pytest …`; web tests with `cd apps/web && pnpm test -- …`.
