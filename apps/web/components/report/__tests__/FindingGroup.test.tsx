@@ -81,4 +81,18 @@ describe("CountsStrip", () => {
 
     expect(screen.getByTestId("count-legit").textContent).toContain("00");
   });
+
+  it("renders nothing when the report has one or zero findings total", () => {
+    // A 00/01/00 strip is empty scaffolding: two zero cells plus one number
+    // the findings list already states in full. The strip only earns its
+    // space once there's a spread to summarize (>1 finding), so a single-
+    // finding report omits it entirely.
+    const vm = highVM();
+    const first = vm.groups[0];
+    const single = { ...vm, groups: [{ ...first, findings: [first.findings[0]] }] };
+    const { container } = render(<CountsStrip vm={single} />);
+
+    expect(screen.queryByTestId("count-suspicious")).toBeNull();
+    expect(container).toBeEmptyDOMElement();
+  });
 });

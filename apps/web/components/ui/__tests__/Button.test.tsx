@@ -19,4 +19,18 @@ describe("Button", () => {
     fireEvent.click(screen.getByRole("button", { name: "Go" }));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it("when pending: is disabled, marked aria-busy, and shows the pending label", () => {
+    const onClick = vi.fn();
+    render(
+      <Button pending pendingLabel="Saving…" onClick={onClick}>
+        Save
+      </Button>,
+    );
+    const button = screen.getByRole("button", { name: /saving/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });

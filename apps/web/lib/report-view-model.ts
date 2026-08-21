@@ -60,14 +60,50 @@ export type CompleteReportVM = ReportVM & {
   summary: string;
 };
 
-export const BAND_MEANING: Record<Band, string> = {
-  HIGH: "Multiple signals here match patterns common in job scams. Treat it with caution and verify independently before acting.",
-  LOW: "Nothing here matches the scam patterns we check for, and the company and posting line up with each other. That isn't a guarantee — two things below stayed unverified.",
-  MODERATE:
-    "A few signals here are worth a second look. That isn't a verdict either way, so treat the items below as things to confirm before you proceed.",
-  CRITICAL:
-    "This matches the patterns we see in confirmed job scams closely enough that we'd stop here. Don't send money or personal documents, and verify independently before doing anything else.",
-};
+// Band copy is derived, never hardcoded. The previous static strings asserted
+// facts about the findings ("Nothing here matches…", "two things below stayed
+// unverified", "Multiple signals…") that were only true for the fixture they
+// were written against — a LOW report with one suspicious finding rendered a
+// banner that contradicted the section directly beneath it.
+const COUNT_WORD = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+function countWord(n: number): string {
+  return COUNT_WORD[n] ?? String(n);
+}
+
+function signalPhrase(n: number): string {
+  return `${countWord(n)} signal${n === 1 ? "" : "s"}`;
+}
+
+function bandLead(band: Band, suspicious: number): string {
+  switch (band) {
+    case "LOW":
+      return suspicious === 0
+        ? "Nothing here matches the scam patterns we check for, and the company and posting line up with each other."
+        : `${signalPhrase(suspicious)} here warranted a note, but not enough — on its own — to move this out of the lowest band.`;
+    case "MODERATE":
+      return `${signalPhrase(suspicious)} here ${suspicious === 1 ? "is" : "are"} worth a second look. That isn't a verdict either way, so treat the items below as things to confirm before you proceed.`;
+    case "HIGH":
+      return `${signalPhrase(suspicious)} here match${suspicious === 1 ? "es" : ""} patterns common in job scams. Treat it with caution and verify independently before acting.`;
+    case "CRITICAL":
+      return "This matches the patterns we see in confirmed job scams closely enough that we'd stop here. Don't send money or personal documents, and verify independently before doing anything else.";
+  }
+}
+
+function unverifiedCaveat(band: Band, unverifiable: number): string {
+  if (unverifiable === 0) return "";
+  const tail = `${countWord(unverifiable)} thing${unverifiable === 1 ? "" : "s"} below stayed unverified.`;
+  // Only the LOW band frames the gap as a caveat against a reassuring lead;
+  // the other bands are already cautionary, so the count stands on its own.
+  return band === "LOW" ? ` That isn't a guarantee — ${tail}` : ` ${tail[0].toUpperCase()}${tail.slice(1)}`;
+}
+
+export function bandMeaning(
+  band: Band,
+  counts: { suspicious: number; unverifiable: number },
+): string {
+  return bandLead(band, counts.suspicious) + unverifiedCaveat(band, counts.unverifiable);
+}
 
 export const CONFIDENCE_NOTE: Record<ConfidenceLevel, string> = {
   Low: "Much of this rested on material we couldn't check independently.",
@@ -96,6 +132,16 @@ const GROUP_HEADING: Record<FindingVM["direction"], string> = {
   unverifiable: "What we couldn't verify",
 };
 
+// Canonical id the API's evidence_assembly gives the submitter's pasted job
+// posting (apps/api/src/app/graph/nodes/evidence.py `_posting_source`). Both
+// the posting and V1's conversation paste arrive as kind "user_provided", so
+// the id is what separates them for attribution copy.
+export const POSTING_SOURCE_ID = "src_det_posting";
+
+function isPostingSource(source: Source): boolean {
+  return source.kind === "user_provided" && source.id === POSTING_SOURCE_ID;
+}
+
 function sourceName(source: Source): { name: string; defang: boolean } {
   if (source.url) {
     return { name: defang(source.url), defang: true };
@@ -106,7 +152,10 @@ function sourceName(source: Source): { name: string; defang: boolean } {
     case "dns":
       return { name: "mail records", defang: false };
     case "user_provided":
-      return { name: "conversation you shared", defang: false };
+      return {
+        name: isPostingSource(source) ? "posting you submitted" : "conversation you shared",
+        defang: false,
+      };
     case "fetched_page":
     case "search_result":
       return { name: "web source", defang: false };
@@ -123,6 +172,26 @@ function toSourceVM(source: Source): SourceVM {
     excerpt: source.raw_excerpt ?? source.content_summary,
     defang: isDefanged,
   };
+}
+
+// Spec §9.1 mandates a disclosure sentence on any finding resting on material
+// the submitter supplied. Which artefact it names is derived from what the
+// finding cites: in V0 that is the pasted posting, in V1 also the pasted
+// conversation. A finding citing neither (an uncited claim the citation
+// validator is about to drop) falls back to the broader wording.
+function provenanceLabel(
+  provenance: string,
+  sources: Source[],
+): string | null {
+  if (provenance !== "user_provided_unverified") return null;
+  const userSupplied = sources.filter((s) => s.kind === "user_provided");
+  if (userSupplied.length > 0 && userSupplied.every(isPostingSource)) {
+    return "Based on the posting text you submitted — we can't independently verify it.";
+  }
+  if (userSupplied.some((s) => !isPostingSource(s))) {
+    return "Based on the conversation you shared — we can't independently verify it.";
+  }
+  return "Based on the material you submitted — we can't independently verify it.";
 }
 
 function buildMetaLine(
@@ -155,17 +224,16 @@ export function toReportViewModel(inv: Investigation): ReportVM {
   const confidenceRaw = assessment?.confidence ?? null;
   const conf = confidenceRaw ? CONFIDENCE_MAP[confidenceRaw] : null;
   const bandIndex = band ? BAND_INDEX[band] : null;
-  const bandMeaning = band ? BAND_MEANING[band] : null;
 
   const sources = inv.sources ?? [];
   const findings = inv.findings ?? [];
   const sourceById = new Map(sources.map((s) => [s.id, s]));
 
   const findingVMs: FindingVM[] = findings.map((finding, index) => {
-    const findingSources = (finding.source_ids ?? [])
+    const findingSourceRecords = (finding.source_ids ?? [])
       .map((id) => sourceById.get(id))
-      .filter((s): s is Source => s !== undefined)
-      .map(toSourceVM);
+      .filter((s): s is Source => s !== undefined);
+    const findingSources = findingSourceRecords.map(toSourceVM);
 
     return {
       recordId: `F-${pad2(index + 1)}`,
@@ -173,10 +241,7 @@ export function toReportViewModel(inv: Investigation): ReportVM {
       severity: finding.severity,
       claim: finding.claim,
       metaLine: buildMetaLine(finding.direction, finding.severity, findingSources.length),
-      provenanceLabel:
-        finding.provenance === "user_provided_unverified"
-          ? "Based on the conversation you shared — we can't independently verify it."
-          : null,
+      provenanceLabel: provenanceLabel(finding.provenance, findingSourceRecords),
       however: finding.mitigation ?? null,
       sources: findingSources,
     };
@@ -192,6 +257,15 @@ export function toReportViewModel(inv: Investigation): ReportVM {
     };
   }).filter((g) => g.findings.length > 0);
 
+  // Derived from the findings the page actually renders, so the banner can
+  // never contradict the sections below it.
+  const meaning = band
+    ? bandMeaning(band, {
+        suspicious: findingVMs.filter((f) => f.direction === "suspicious").length,
+        unverifiable: findingVMs.filter((f) => f.direction === "unverifiable").length,
+      })
+    : null;
+
   const repeatLine =
     inv.check_count && inv.check_count > 0
       ? `CHECKED ${inv.check_count} TIMES IN THE PAST WEEK`
@@ -205,13 +279,20 @@ export function toReportViewModel(inv: Investigation): ReportVM {
     submittedRows.push({ label: "Company", value: inv.submission.company_name });
   if (inv.submission.recruiter_email !== undefined)
     submittedRows.push({ label: "Email", value: inv.submission.recruiter_email, mono: true });
+  // The posting URL is captured by NewCheckForm and stored on the submission,
+  // so echoing it back is the user's confirmation that we checked the link
+  // they meant. Mono because it's a machine string, and — per rule #4 — a
+  // plain value, never an <a href>: this app must not offer a one-click route
+  // to a page it may be about to call a scam.
+  if (inv.submission.job_url !== undefined)
+    submittedRows.push({ label: "Posting", value: inv.submission.job_url, mono: true });
 
   return {
     caseId: toCaseId(inv.id),
     complete,
     band,
     bandIndex,
-    bandMeaning,
+    bandMeaning: meaning,
     confidence: conf?.level ?? null,
     confidenceSegments: conf?.segments ?? null,
     confidenceNote: conf ? CONFIDENCE_NOTE[conf.level] : null,

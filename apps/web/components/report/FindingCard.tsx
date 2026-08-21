@@ -104,7 +104,10 @@ export function FindingCard({ finding }: FindingCardProps) {
           aria-controls={open ? expandId : undefined}
           aria-label={open ? "Collapse details" : "Expand details"}
           onClick={() => setOpen((current) => !current)}
-          className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-none border border-ink text-[14px] leading-none max-[430px]:h-11 max-[430px]:w-11"
+          // A constantly-pressed control must feel it heard the press: subtle
+          // scale-down on :active + a hover tint, on the shared strong ease-out
+          // (transform only — off the main thread, no layout).
+          className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-none border border-ink text-[14px] leading-none transition-[transform,background-color] duration-100 [transition-timing-function:var(--ease-out)] hover:bg-surface-soft active:scale-[0.95] max-[430px]:h-11 max-[430px]:w-11"
         >
           {open ? "−" : "+"}
         </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMotion } from "../../lib/motion";
 
@@ -15,21 +15,60 @@ export interface TooltipProps {
 }
 
 /**
- * A `?` affordance that reveals an explanatory panel on click or focus.
- * Closes on Escape or when focus leaves the widget entirely (blur to
- * outside the trigger/panel).
+ * A `?` affordance that reveals an explanatory panel on hover, keyboard
+ * focus, or click/tap. Closes on Escape, on pointer-out, or when focus
+ * leaves the widget entirely.
+ *
+ * Visibility is *derived* from three independent inputs rather than stored
+ * as one `open` flag. That is what fixes the "first hover/click does
+ * nothing" bug: a real mouse click fires pointerdown -> focus -> click, and
+ * with a single flag the focus handler opened the panel and the click
+ * handler's toggle immediately closed it again. Deriving `open` means the
+ * two inputs reinforce each other instead of cancelling out.
  */
 export function Tooltip({ label, children, tone }: TooltipProps) {
-  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  // Click/tap pin — the only way to keep the panel up on a touch device,
+  // which has no hover at all.
+  const [pinned, setPinned] = useState(false);
+  const [keyboardFocused, setKeyboardFocused] = useState(false);
+  // An explicit dismissal (Escape, or a click while the panel is showing)
+  // has to win over a hover that is still physically true — otherwise the
+  // panel would spring straight back while the cursor sits on the trigger.
+  const [dismissed, setDismissed] = useState(false);
+  // Distinguishes "focused by tabbing" from "focused as a side effect of a
+  // click", so a mouse click doesn't get treated as keyboard focus.
+  const pointerDriven = useRef(false);
+
   const panelId = useId();
+  const open = !dismissed && (hovered || pinned || keyboardFocused);
   // useMotion() zeroes the tooltip preset's duration under reduced motion,
   // so this panel collapses to an instant show for free.
   const { tooltip: transition } = useMotion();
 
+  function closeAll() {
+    setHovered(false);
+    setPinned(false);
+    setKeyboardFocused(false);
+    setDismissed(false);
+    pointerDriven.current = false;
+  }
+
   function handleBlur(event: FocusEvent<HTMLDivElement>) {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      setOpen(false);
+      closeAll();
     }
+  }
+
+  function handleClick() {
+    if (open) {
+      setPinned(false);
+      setDismissed(true);
+    } else {
+      setPinned(true);
+      setDismissed(false);
+    }
+    pointerDriven.current = false;
   }
 
   // Escape is the only key this handler needs: Enter/Space are already
@@ -44,7 +83,9 @@ export function Tooltip({ label, children, tone }: TooltipProps) {
   // guarantees the platform gives us Enter/Space activation for free.
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "Escape") {
-      setOpen(false);
+      setPinned(false);
+      setKeyboardFocused(false);
+      setDismissed(true);
     }
   }
 
@@ -58,8 +99,21 @@ export function Tooltip({ label, children, tone }: TooltipProps) {
         // at a closed panel's id would target a nonexistent element.
         aria-controls={open ? panelId : undefined}
         aria-label={label}
-        onClick={() => setOpen((current) => !current)}
-        onFocus={() => setOpen(true)}
+        onPointerDown={() => {
+          pointerDriven.current = true;
+        }}
+        onClick={handleClick}
+        onMouseEnter={() => {
+          setHovered(true);
+          setDismissed(false);
+        }}
+        onMouseLeave={() => {
+          setHovered(false);
+          setDismissed(false);
+        }}
+        onFocus={() => {
+          if (!pointerDriven.current) setKeyboardFocused(true);
+        }}
         onKeyDown={handleKeyDown}
         className={[
           "rounded-none border w-5 h-5 text-[10px] leading-none inline-flex items-center justify-center max-[430px]:h-11 max-[430px]:w-11",
@@ -81,7 +135,9 @@ export function Tooltip({ label, children, tone }: TooltipProps) {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={transition}
-            className="absolute z-10 mt-1 rounded-none border border-ink bg-page p-2 text-[12px]"
+            // w-max + max-w keeps the panel from collapsing to the 20px
+            // trigger's width while still wrapping inside narrow columns.
+            className="absolute z-10 mt-1 w-max max-w-[18rem] rounded-none border border-ink bg-page p-2 text-[12px] text-ink"
           >
             {children}
           </motion.div>

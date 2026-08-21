@@ -19,6 +19,7 @@ import { FindingGroup } from "../report/FindingGroup";
 import { VerifyChecklist } from "../report/VerifyChecklist";
 import { ReportFooter } from "../report/ReportFooter";
 import { ReportRail } from "../report/ReportRail";
+import { Reveal, RevealItem } from "../ui/Reveal";
 import { useState } from "react";
 
 // Report/IncompleteReport branch on vm.complete before rendering the band
@@ -108,24 +109,45 @@ function IncompleteReport({ investigation }: { investigation: Investigation }) {
 function Report({ investigation }: { investigation: Investigation }) {
   const vm = toReportViewModel(investigation);
   const [reported, setReported] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   if (!vm.complete) return <IncompleteReport investigation={investigation} />;
   const completeVm = asComplete(vm);
 
   return (
     <main id="main-content">
-      <BandBanner vm={completeVm} confidenceSlot={<ConfidencePanel vm={completeVm} />} />
+      {/* Rare, first-time view (spec §3): the verdict lands on load, then the
+          evidence sections rise and cascade in on their own slots — reusing the
+          shared screenEnter/stagger presets, so reduced motion drops movement
+          for free. Above-the-fold Reveal fires on mount; lower sections key to
+          viewport entry. */}
+      <Reveal>
+        <RevealItem>
+          <BandBanner vm={completeVm} confidenceSlot={<ConfidencePanel vm={completeVm} />} />
+        </RevealItem>
+      </Reveal>
       <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-[1fr_320px]">
-        <div className="flex flex-col gap-10">
-          <Summary summary={completeVm.summary} />
+        <Reveal className="flex flex-col gap-10">
+          <RevealItem>
+            <Summary summary={completeVm.summary} />
+          </RevealItem>
           {vm.groups.map((group) => (
-            <FindingGroup key={group.key} group={group} />
+            <RevealItem key={group.key}>
+              <FindingGroup group={group} />
+            </RevealItem>
           ))}
-          <VerifyChecklist items={vm.verifyChecklist} />
-          <ReportFooter vm={vm} reported={reported} onReport={() => setReported(true)} />
-        </div>
-        <ReportRail vm={vm} saved={saved} onSave={() => setSaved(true)} />
+          <RevealItem>
+            <VerifyChecklist items={vm.verifyChecklist} />
+          </RevealItem>
+          <RevealItem>
+            <ReportFooter vm={vm} />
+          </RevealItem>
+        </Reveal>
+        <ReportRail
+          vm={vm}
+          investigationId={investigation.id}
+          reported={reported}
+          onReport={() => setReported(true)}
+        />
       </div>
     </main>
   );

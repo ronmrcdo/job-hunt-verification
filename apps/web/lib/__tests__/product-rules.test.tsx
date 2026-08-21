@@ -31,7 +31,7 @@ function renderAssembledReport(vm: ReturnType<typeof toReportViewModel>) {
         <FindingGroup key={group.key} group={group} />
       ))}
       <VerifyChecklist items={vm.verifyChecklist} />
-      <ReportFooter vm={vm} onReport={() => {}} reported={false} />
+      <ReportFooter vm={vm} />
     </FlowProvider>,
   );
 }

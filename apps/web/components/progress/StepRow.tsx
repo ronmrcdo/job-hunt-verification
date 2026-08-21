@@ -1,12 +1,21 @@
 "use client";
 
-// One row in the scripted progress list. Rows carry no percentage or
-// spinner — the only signal is which state a row is in (queued -> running
-// -> done/soft), read off `data-step-state` by tests instead of any class
-// name so the visual styling can change freely.
-import { useMemo, type CSSProperties } from "react";
-import { motion } from "framer-motion";
-import { useMotion } from "../../lib/motion";
+// One row in the scripted progress list. The signal is which state a row is
+// in (queued -> running -> done/soft/failed), read off `data-step-state` by
+// tests instead of any class name so the visual styling can change freely.
+//
+// Every per-state colour below is a direct port of the design handoff's
+// PROGRESS `renderVals` map (Investigator Prototype.dc.html) — the running
+// state is deliberately monochrome (ink, not an accent colour, #FAFAFA row).
+//
+// The status glyph animates per state (see StepGlyph): running spins, done
+// draws a check, failed draws an X. queued/soft keep the handoff's hollow
+// square. This is a deliberate extension of the handoff, which only animated
+// the staggered `rise` entrance and the colour/background state transitions.
+import { type CSSProperties } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { useMotion, SPRING } from "../../lib/motion";
+import { Spinner } from "../ui/Spinner";
 
 export type StepRowState = "done" | "soft" | "running" | "queued" | "failed";
 
@@ -19,6 +28,15 @@ export interface StepRowStep {
 export interface StepRowProps {
   step: StepRowStep;
   state: StepRowState;
+  /** Position in the list — drives the `rise` stagger (handoff: i * 70ms). */
+  index?: number;
+  /**
+   * The step's server-set completion time (InvestigationStep.finished_at), an
+   * ISO string. Rendered in col1 for terminal rows so each row shows when *it*
+   * actually closed — not when the list mounted. Null/absent renders an em dash
+   * rather than a fabricated clock reading.
+   */
+  finishedAt?: string | null;
 }
 
 const RIGHT_LABEL: Record<StepRowState, string> = {
@@ -29,38 +47,171 @@ const RIGHT_LABEL: Record<StepRowState, string> = {
   failed: "Failed",
 };
 
-function statusSquareStyle(state: StepRowState): CSSProperties {
-  switch (state) {
-    case "done":
-      return { background: "var(--color-ink)", border: "1px solid var(--color-ink)" };
-    case "soft":
-      return { background: "var(--color-page)", border: "1px solid var(--color-suspicious)" };
-    case "running":
-      return { background: "var(--color-page)", border: "1px solid var(--color-ink)" };
-    case "queued":
-      return { background: "var(--color-page)", border: "1px solid var(--color-rule)" };
-    case "failed":
-      return { background: "var(--color-page)", border: "1px solid var(--color-critical)" };
-  }
+// Handoff renderVals port. dotBg/dotBorder -> the status square; title/note ->
+// text colours; label -> the right-hand state word. `failed` isn't in the
+// prototype (the progress list only models done/running/queued/soft) so it
+// reuses the app's critical treatment.
+interface StateStyle {
+  dotBg: string;
+  dotBorder: string;
+  title: string;
+  note: string;
+  label: string;
+  runningRow: boolean;
 }
 
-function formatTimestamp(): string {
-  return new Date().toLocaleTimeString("en-US", {
+const STATE_STYLE: Record<StepRowState, StateStyle> = {
+  done: {
+    dotBg: "var(--color-ink)",
+    dotBorder: "var(--color-ink)",
+    title: "var(--color-ink)",
+    note: "var(--color-secondary)",
+    label: "var(--color-ink)",
+    runningRow: false,
+  },
+  soft: {
+    dotBg: "var(--color-page)",
+    dotBorder: "var(--color-suspicious)",
+    title: "var(--color-ink)",
+    note: "var(--color-suspicious)",
+    label: "var(--color-suspicious)",
+    runningRow: false,
+  },
+  running: {
+    dotBg: "var(--color-page)",
+    dotBorder: "var(--color-ink)",
+    title: "var(--color-ink)",
+    note: "var(--color-secondary)",
+    label: "var(--color-muted)",
+    runningRow: true,
+  },
+  queued: {
+    dotBg: "var(--color-page)",
+    dotBorder: "var(--color-rule-strong)",
+    title: "var(--color-faint)",
+    note: "var(--color-faint)",
+    label: "var(--color-faint)",
+    runningRow: false,
+  },
+  failed: {
+    dotBg: "var(--color-page)",
+    dotBorder: "var(--color-critical)",
+    title: "var(--color-ink)",
+    note: "var(--color-critical)",
+    label: "var(--color-critical)",
+    runningRow: false,
+  },
+};
+
+function squareStyle(s: StateStyle): CSSProperties {
+  return {
+    background: s.dotBg,
+    border: `1px solid ${s.dotBorder}`,
+    // Handoff: transition background 350ms ease, border-color 350ms ease.
+    // Framer's `layout` won't tween these inline colours, so the crossfade
+    // when a row flips state lives here in CSS.
+    transition: "background 0.35s ease, border-color 0.35s ease",
+  };
+}
+
+// The 11px status glyph. running -> spinner, done -> a check that draws
+// itself, failed -> an X that draws itself; queued/soft keep the handoff's
+// hollow square. Icons share the state's `dotBorder` colour (ink for
+// running/done, critical for failed). Under reduced motion the check/X render
+// fully drawn and only fade — no stroke draw, no pop — while the spinner keeps
+// turning since it's the sole signal that a step is working.
+function StepGlyph({ state, s }: { state: StepRowState; s: StateStyle }) {
+  const reduce = useReducedMotion();
+
+  if (state === "queued" || state === "soft") {
+    return <div className="mt-[5px] h-[11px] w-[11px] rounded-none" style={squareStyle(s)} />;
+  }
+
+  if (state === "running") {
+    return (
+      <div className="mt-[5px]" style={{ color: s.dotBorder }} aria-hidden="true">
+        <Spinner size={11} />
+      </div>
+    );
+  }
+
+  // done | failed — a self-drawing check or X.
+  const draw = reduce
+    ? { pathLength: 1, opacity: 1 }
+    : { pathLength: [0, 1], opacity: [0, 1] };
+  const drawTransition = reduce
+    ? { duration: 0.2 }
+    : { duration: 0.26, ease: SPRING.ease, opacity: { duration: 0.12 } };
+
+  return (
+    <motion.svg
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      className="mt-[5px]"
+      style={{ width: 11, height: 11, color: s.dotBorder }}
+      initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.9 }}
+      animate={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2, ease: SPRING.ease }}
+    >
+      {state === "done" ? (
+        <motion.path
+          d="M2.5 6.2 L4.9 8.6 L9.3 3.4"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          initial={reduce ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
+          animate={draw}
+          transition={drawTransition}
+        />
+      ) : (
+        <>
+          <motion.path
+            d="M3.2 3.2 L8.8 8.8"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            initial={reduce ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
+            animate={draw}
+            transition={drawTransition}
+          />
+          <motion.path
+            d="M8.8 3.2 L3.2 8.8"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            initial={reduce ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
+            animate={draw}
+            transition={reduce ? drawTransition : { ...drawTransition, delay: 0.08 }}
+          />
+        </>
+      )}
+    </motion.svg>
+  );
+}
+
+// Formats the step's completion time as a 24h HH:MM clock in the viewer's
+// local timezone — the same shape the design handoff shows in col1.
+function formatClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
-export function StepRow({ step, state }: StepRowProps) {
-  const { colorShift } = useMotion();
-  // Timestamp is cosmetic (display-only), fixed at the moment this row
-  // first renders in a done/soft state rather than recomputed every render.
-  const timestamp = useMemo(() => formatTimestamp(), []);
+export function StepRow({ step, state, index = 0, finishedAt }: StepRowProps) {
+  const { screenEnterAt } = useMotion();
+  const s = STATE_STYLE[state];
 
+  // col1: terminal rows show their own finish time (falling back to an em dash
+  // when the server hasn't recorded one); active rows show their state word.
   const col1 =
     state === "done" || state === "soft" || state === "failed"
-      ? timestamp
+      ? finishedAt
+        ? formatClock(finishedAt)
+        : "—"
       : state === "running"
         ? "running"
         : "queued";
@@ -71,27 +222,41 @@ export function StepRow({ step, state }: StepRowProps) {
     <motion.div
       layout
       data-step-state={state}
-      animate={{ opacity: 1 }}
-      transition={colorShift}
-      className="grid grid-cols-[88px_22px_1fr_108px] items-start gap-3 border-t border-rule px-2 py-3"
-      style={{ background: state === "running" ? "var(--color-neutral-row)" : undefined }}
+      // Handoff: `rise` (opacity 0 + translateY 16px -> 0), 620ms on the
+      // shared curve, staggered i * 70ms down the list.
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={screenEnterAt(index * 0.07)}
+      className="grid grid-cols-[88px_22px_1fr_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px]"
+      style={{
+        // Handoff: running rows tint #FAFAFA; transition background 400ms ease.
+        background: s.runningRow ? "var(--color-neutral-row)" : "var(--color-page)",
+        transition: "background 0.4s ease",
+      }}
     >
-      <div className="pt-[3px] font-mono text-[12px] text-muted">{col1}</div>
-      <div className="mt-[3px] h-[11px] w-[11px] rounded-none" style={statusSquareStyle(state)} />
+      <div className="pt-[3px] font-mono text-[11px]" style={{ color: "var(--color-faint)" }}>
+        {col1}
+      </div>
+      <StepGlyph state={state} s={s} />
       <div>
-        <div className="text-[16px] font-bold">{step.title}</div>
-        {showNote && <div className="mt-1 text-[13px] leading-[1.5] text-secondary">{note}</div>}
+        <div
+          className="text-[16px] font-bold"
+          style={{ color: s.title, transition: "color 0.35s ease" }}
+        >
+          {step.title}
+        </div>
+        {showNote && (
+          <div
+            className="mt-1 text-[13px] leading-[1.5]"
+            style={{ color: s.note, transition: "color 0.35s ease" }}
+          >
+            {note}
+          </div>
+        )}
       </div>
       <div
-        className="pt-[3px] text-right text-[11px] uppercase tracking-[0.1em]"
-        style={{
-          color:
-            state === "soft"
-              ? "var(--color-suspicious)"
-              : state === "failed"
-                ? "var(--color-critical)"
-                : undefined,
-        }}
+        className="pt-[3px] text-right text-[10px] uppercase tracking-[0.1em]"
+        style={{ color: s.label }}
       >
         {RIGHT_LABEL[state]}
       </div>

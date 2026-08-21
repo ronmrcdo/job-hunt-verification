@@ -25,16 +25,23 @@ export function ConfidencePanel({ vm }: ConfidencePanelProps) {
           {CONFIDENCE_EXPLANATION}
         </Tooltip>
       </div>
-      <div className="mt-2 text-[34px] uppercase leading-none">{vm.confidence.toUpperCase()}</div>
-      <div className="mt-4 max-w-[16rem]">
-        <SegmentBar
-          total={3}
-          filled={vm.confidenceSegments}
-          fillColor="var(--color-page)"
-          emptyColor="var(--color-ink-muted)"
-        />
+      {/* Value and meter sit on one baseline, as in the prototype: the bar
+          reads as a qualifier of the word next to it, not as a separate
+          full-width element floating under it. */}
+      <div className="mt-2 flex items-center gap-4">
+        <span className="text-[34px] font-bold uppercase leading-none tracking-tight">
+          {vm.confidence.toUpperCase()}
+        </span>
+        <div className="w-[76px] shrink-0">
+          <SegmentBar
+            total={3}
+            filled={vm.confidenceSegments}
+            fillColor="var(--color-page)"
+            emptyColor="var(--color-ink-muted)"
+          />
+        </div>
       </div>
-      <p className="mt-3 text-page/90">{vm.confidenceNote}</p>
+      <p className="mt-4 text-[14px] leading-[1.5] text-page/90">{vm.confidenceNote}</p>
       <SubmittedGrid rows={vm.submitted} />
     </div>
   );

@@ -1,3 +1,5 @@
+"use client";
+
 // Preview of the pasted posting queued behind the sign-in gate. The
 // posting is shown as plain mono text — never an <a href> — per Rule #4
 // (no suspicious-URL links), even when the posting is itself a URL.

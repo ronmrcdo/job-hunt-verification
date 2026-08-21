@@ -41,7 +41,9 @@ export function TextArea({
         onChange={(event) => onChange(event.target.value)}
         style={minHeight ? { minHeight } : undefined}
         className={[
-          "w-full border border-ink rounded-none p-[13px]",
+          // mt-2 keeps the focus ring (outline + 2px offset) from overlapping
+          // the label sitting directly above.
+          "mt-2 w-full border border-ink rounded-none p-[13px]",
           mono ? "font-mono text-[14px] leading-[1.6]" : "",
         ]
           .filter(Boolean)

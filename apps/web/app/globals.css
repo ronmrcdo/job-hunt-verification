@@ -4,7 +4,7 @@
   --color-ink: #26282C; --color-ink-hover: #3D4046; --color-ink-muted: #4A4D53;
   --color-body: #1A1A1A; --color-secondary: #444444; --color-muted: #666666; --color-faint: #888888;
   --color-page: #FFFFFF; --color-surface-soft: #F7F7F5; --color-surface-alt: #FAFAF8; --color-neutral-row: #FAFAFA;
-  --color-rule: #EDEDEA; --color-rule-soft: #E8E8E5;
+  --color-rule: #EDEDEA; --color-rule-soft: #E8E8E5; --color-rule-strong: #D5D5D5;
   --color-legit: #3F6B4A; --color-suspicious: #A8501F;
   --color-critical: #A3241C; --color-critical-tint: #FDF7F4; --color-critical-rule: #E6C3BF;
   --color-warn-tint: #FBF2EC; --color-warn-rule: #E4CBB9;
@@ -18,8 +18,38 @@
   --font-sans: Helvetica, Arial, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "JetBrains Mono", monospace;
   --shadow-band: 0 1px 2px rgba(38,40,44,0.06);
+  /* Shared easing curves — the single source of truth for motion feel.
+     Stronger than the built-in CSS easings, which lack punch. Never inline
+     a different curve in a component (mirrors lib/motion.ts for JS motion). */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 @layer base {
   body { @apply bg-page text-body antialiased; font-family: var(--font-sans); }
+
+  /* One crisp, square focus ring across every interactive element — matches
+     the flat, sharp-cornered system (no rounded halo). :focus-visible keeps
+     it off mouse clicks while guaranteeing keyboard/AT users always see it. */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+
+  /* JetBrains Mono ships coding ligatures (//, ==, =>, ://, www…). In an
+     editable field those merge glyphs and distort the literal characters the
+     user typed — e.g. "//" renders as a single connected double-slash. Turn
+     ligatures off for every form control so what's shown is exactly what was
+     entered. */
+  input, textarea {
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+}
+
+/* Loading spinner — kept fast (0.6s) because a quicker spin makes the app
+   feel like it's working harder. Defined here so `animate-[spin_...]` always
+   resolves regardless of Tailwind's theme keyframes. */
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

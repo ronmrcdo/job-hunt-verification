@@ -30,7 +30,7 @@ export function RecentChecks({ items }: { items: Investigation[] }) {
             className="flex items-center justify-between gap-4 py-3"
           >
             <span className="truncate text-[14px]">
-              {item.submission.company_name ?? "Untitled posting"}
+              {item.title ?? "Untitled posting"}
             </span>
             <span className="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
               {statusLabel(item.status)}

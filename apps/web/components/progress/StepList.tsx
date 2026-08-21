@@ -39,11 +39,13 @@ export function StepList({ steps, caseId }: StepListProps) {
         </div>
       )}
       <div>
-        {sorted.map((step) => (
+        {sorted.map((step, i) => (
           <StepRow
             key={step.step_key}
             step={{ title: step.label }}
             state={stepState(step.status)}
+            index={i}
+            finishedAt={step.finished_at}
           />
         ))}
       </div>

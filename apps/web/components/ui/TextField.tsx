@@ -12,6 +12,8 @@ export interface TextFieldProps {
   rightSlot?: ReactNode;
   minWidth?: string;
   autoComplete?: string;
+  /** Marks the field invalid: red border + aria-invalid for AT. */
+  invalid?: boolean;
 }
 
 export function TextField({
@@ -24,6 +26,7 @@ export function TextField({
   rightSlot,
   minWidth,
   autoComplete,
+  invalid = false,
 }: TextFieldProps) {
   const id = useId();
 
@@ -44,9 +47,13 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         autoComplete={autoComplete}
+        aria-invalid={invalid || undefined}
         onChange={(event) => onChange(event.target.value)}
         className={[
-          "w-full border border-ink rounded-none p-[13px]",
+          // mt-2 keeps the focus ring (outline + 2px offset) from overlapping
+          // the label sitting directly above.
+          "mt-2 w-full rounded-none border p-[13px] transition-colors duration-150",
+          invalid ? "border-critical" : "border-ink",
           mono ? "font-mono text-[14px] leading-[1.6]" : "",
         ]
           .filter(Boolean)

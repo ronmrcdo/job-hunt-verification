@@ -67,3 +67,44 @@ describe("Tooltip", () => {
     expect(panel).toHaveTextContent("Details here");
   });
 });
+
+describe("Tooltip — pointer interaction", () => {
+  it("opens on hover", () => {
+    render(<Tooltip label="Confidence explanation">Details here</Tooltip>);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Confidence explanation" }));
+    expect(screen.getByText("Details here")).toBeInTheDocument();
+  });
+
+  it("closes when the pointer leaves", async () => {
+    render(<Tooltip label="Confidence explanation">Details here</Tooltip>);
+    const trigger = screen.getByRole("button", { name: "Confidence explanation" });
+    fireEvent.mouseEnter(trigger);
+    fireEvent.mouseLeave(trigger);
+    await waitFor(() => expect(screen.queryByText("Details here")).not.toBeInTheDocument());
+  });
+
+  // The regression this suite exists for: a real mouse click fires
+  // pointerdown -> focus -> click. When focus opened the panel, the click's
+  // toggle closed it again, so the first click looked like a no-op.
+  it("stays open through a full pointer click sequence", () => {
+    render(<Tooltip label="Confidence explanation">Details here</Tooltip>);
+    const trigger = screen.getByRole("button", { name: "Confidence explanation" });
+    fireEvent.pointerDown(trigger);
+    fireEvent.focus(trigger);
+    fireEvent.click(trigger);
+    expect(screen.getByText("Details here")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+  });
+
+  // Touch has no hover, so tapping a second time must still dismiss it.
+  it("dismisses on a second pointer click", async () => {
+    render(<Tooltip label="Confidence explanation">Details here</Tooltip>);
+    const trigger = screen.getByRole("button", { name: "Confidence explanation" });
+    fireEvent.pointerDown(trigger);
+    fireEvent.focus(trigger);
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    await waitFor(() => expect(screen.queryByText("Details here")).not.toBeInTheDocument());
+  });
+});

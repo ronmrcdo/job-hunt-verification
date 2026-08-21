@@ -17,6 +17,7 @@ export const SAMPLE_LOW: {
     id: "51a00442-0000-4000-8000-000000000002",
     user_id: "9e7c5c9a-0000-4000-8000-0000000000bb",
     status: "done",
+    title: "Northwind Systems",
     created_at: "2026-08-18T09:41:00Z",
     submission: {
       job_text: "Customer Operations Associate",

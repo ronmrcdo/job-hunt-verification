@@ -110,3 +110,140 @@ describe("toReportViewModel with a missing assessment", () => {
     expect(vm.band).toBe("LOW");
   });
 });
+
+describe("bandMeaning is derived from the findings, not hardcoded", () => {
+  const withFindings = (
+    band: "LOW" | "MODERATE" | "HIGH" | "CRITICAL",
+    directions: ("legitimizing" | "suspicious" | "unverifiable")[],
+  ) => ({
+    ...SAMPLE_LOW.inv,
+    assessment: { ...SAMPLE_LOW.inv.assessment!, band },
+    findings: directions.map((direction, i) => ({
+      id: `f-${i}`,
+      category: "job" as const,
+      direction,
+      severity: "low" as const,
+      claim: `claim ${i}`,
+      source_ids: [],
+      provenance: "web_verified" as const,
+      mitigation: null,
+    })),
+  });
+
+  it("does not claim nothing matches while a suspicious finding is listed", () => {
+    // Case CE710EBD: the LOW banner read "Nothing here matches the scam
+    // patterns we check for" directly above a "WHAT LOOKS SUSPICIOUS · 01"
+    // section.
+    const vm = toReportViewModel(withFindings("LOW", ["suspicious", "unverifiable"]));
+    expect(vm.bandMeaning).not.toMatch(/nothing here matches/i);
+  });
+
+  it("still says nothing matches when nothing actually does", () => {
+    const vm = toReportViewModel(withFindings("LOW", ["legitimizing"]));
+    expect(vm.bandMeaning).toMatch(/nothing here matches/i);
+  });
+
+  it("counts the unverified findings instead of hardcoding two", () => {
+    const vm = toReportViewModel(withFindings("LOW", ["unverifiable", "unverifiable", "unverifiable"]));
+    expect(vm.bandMeaning).toMatch(/three things below stayed unverified/i);
+    expect(vm.bandMeaning).not.toMatch(/two things/i);
+  });
+
+  it("singularizes a lone unverified finding", () => {
+    const vm = toReportViewModel(withFindings("LOW", ["unverifiable"]));
+    expect(vm.bandMeaning).toMatch(/one thing below stayed unverified/i);
+  });
+
+  it("omits the unverified caveat when everything was checked", () => {
+    const vm = toReportViewModel(withFindings("LOW", ["legitimizing", "legitimizing"]));
+    expect(vm.bandMeaning).not.toMatch(/unverified/i);
+  });
+
+  it("does not say multiple signals when a HIGH band rests on one", () => {
+    const vm = toReportViewModel(withFindings("HIGH", ["suspicious"]));
+    expect(vm.bandMeaning).not.toMatch(/multiple signals/i);
+    expect(vm.bandMeaning).toMatch(/one signal/i);
+  });
+});
+
+describe("user-provided provenance names the right artefact", () => {
+  // The pasted job posting is a citable `kind: "user_provided"` source
+  // (id src_det_posting, built by the API's evidence_assembly). Since the
+  // analysis node stopped stamping every finding `web_verified`, findings
+  // resting only on that posting reach the report as
+  // `user_provided_unverified` — and the disclosure sentence, written for
+  // V1's conversation paste, would have told the user we couldn't verify a
+  // conversation they never shared.
+  const postingBacked = () => ({
+    ...SAMPLE_LOW.inv,
+    sources: [
+      {
+        id: "src_det_posting",
+        url: null,
+        kind: "user_provided" as const,
+        retrieved_at: "2026-08-18T09:41:00Z",
+        content_summary: "Submitted job posting text: pay a $200 training fee",
+        raw_excerpt: "pay a $200 training fee",
+      },
+    ],
+    findings: [
+      {
+        id: "f-1",
+        category: "job" as const,
+        direction: "suspicious" as const,
+        severity: "critical" as const,
+        claim: "The posting demands a $200 training fee",
+        source_ids: ["src_det_posting"],
+        provenance: "user_provided_unverified" as const,
+        mitigation: null,
+      },
+    ],
+  });
+
+  it("attributes a posting-backed finding to the posting, not a conversation", () => {
+    const finding = toReportViewModel(postingBacked()).groups[0].findings[0];
+    expect(finding.provenanceLabel).toBe(
+      "Based on the posting text you submitted — we can't independently verify it.",
+    );
+  });
+
+  it("names the posting source for what it is", () => {
+    const finding = toReportViewModel(postingBacked()).groups[0].findings[0];
+    expect(finding.sources[0].name).toBe("posting you submitted");
+  });
+
+  it("keeps the mandated conversation sentence for conversation-backed findings", () => {
+    const vm = toReportViewModel(SAMPLE_HIGH.inv);
+    const critical = vm.groups.flatMap((g) => g.findings).find((f) => f.severity === "critical")!;
+    expect(critical.provenanceLabel).toBe(
+      "Based on the conversation you shared — we can't independently verify it.",
+    );
+  });
+});
+
+describe("submitted rows: the posting URL", () => {
+  // job_url is captured by NewCheckForm and stored on the submission, but
+  // was never surfaced anywhere in the report — the one submitted field the
+  // user can see in the form and then never see again.
+  it("surfaces job_url as a mono Posting row", () => {
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { ...SAMPLE_HIGH.inv.submission, job_url: "https://jobs.example.com/22220" },
+    });
+
+    expect(vm.submitted).toContainEqual({
+      label: "Posting",
+      value: "https://jobs.example.com/22220",
+      mono: true,
+    });
+  });
+
+  it("omits the Posting row when no job_url was submitted", () => {
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { job_text: "some posting" },
+    });
+
+    expect(vm.submitted.map((r) => r.label)).not.toContain("Posting");
+  });
+});

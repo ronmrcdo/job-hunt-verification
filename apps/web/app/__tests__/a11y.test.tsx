@@ -243,7 +243,8 @@ describe("a11y: dynamic status panels announce themselves", () => {
     render(<AuthForm />);
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "a@b.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "short" } });
-    fireEvent.click(screen.getByRole("button", { name: "SIGN IN AND RUN THE CHECK" }));
+    // No FlowProvider mounted → nothing queued → the plain "SIGN IN" CTA.
+    fireEvent.click(screen.getByRole("button", { name: "SIGN IN" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/at least 8 characters/i);
   });
 
