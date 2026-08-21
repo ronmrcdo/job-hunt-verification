@@ -60,16 +60,33 @@ export type InvestigationStep = {
 
 type Client = SupabaseClient<Database>;
 
-export type QuotaStatus = { used: number; limit: number; resetsAt: string | null };
+export type QuotaStatus = {
+  weeklyUsed: number;
+  weeklyLimit: number;
+  resetsAt: string | null;
+  topUpBalance: number;
+};
 
 export async function quotaStatus(client: Client): Promise<QuotaStatus> {
   // `quota_status` is a DB RPC not present in the hand-authored Database types;
   // cast narrowly (same pattern as the `as unknown as` casts elsewhere here).
   const { data } = await (client.rpc as unknown as (fn: string) => {
-    single: () => Promise<{ data: { used?: number; limit?: number; resets_at?: string | null } | null }>;
+    single: () => Promise<{
+      data: {
+        weekly_used?: number;
+        weekly_limit?: number;
+        resets_at?: string | null;
+        top_up_balance?: number;
+      } | null;
+    }>;
   })("quota_status").single();
   const row = data ?? {};
-  return { used: row.used ?? 0, limit: row.limit ?? 3, resetsAt: row.resets_at ?? null };
+  return {
+    weeklyUsed: row.weekly_used ?? 0,
+    weeklyLimit: row.weekly_limit ?? 3,
+    resetsAt: row.resets_at ?? null,
+    topUpBalance: row.top_up_balance ?? 0,
+  };
 }
 
 export type CreateResult =

@@ -111,3 +111,26 @@ def test_enforce_denies_with_pt429_and_hint_and_logs():
 
 def test_verify_rls_has_topup_case():
     assert "case 14" in VERIFY
+
+
+STATUS = _sql("20260821130300_quota_status_weekly_topup.sql")
+
+
+def test_quota_status_new_four_column_shape():
+    assert "create or replace function quota_status()" in STATUS
+    assert "returns table(weekly_used int, weekly_limit int, resets_at timestamptz, top_up_balance int)" in STATUS
+
+
+def test_quota_status_security_definer_and_grant():
+    assert "security definer" in STATUS
+    assert "revoke all on function quota_status() from public" in STATUS
+    assert "grant execute on function quota_status() to authenticated" in STATUS
+
+
+def test_quota_status_counts_weekly_and_joins_balance():
+    assert "quota_source = 'weekly'" in STATUS
+    assert "left join user_check_quota" in STATUS
+
+
+def test_verify_rls_has_quota_status_case():
+    assert "case 15" in VERIFY

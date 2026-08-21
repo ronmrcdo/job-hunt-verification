@@ -19,9 +19,9 @@ import { Button } from "../ui/Button";
 import { useFlowOptional } from "../../lib/flow-context";
 
 function resetCopy(resetsAt: string | null, limit: number): string {
-  if (!resetsAt) return `You’ve used all ${limit} checks. Your quota resets soon.`;
+  if (!resetsAt) return `You’ve used all ${limit} weekly checks and have no bonus checks left. Your weekly quota resets soon.`;
   const d = new Date(resetsAt);
-  return `You’ve used all ${limit} checks. Your quota resets on ${d.toLocaleDateString()}.`;
+  return `You’ve used all ${limit} weekly checks and have no bonus checks left. Your weekly quota resets on ${d.toLocaleDateString()}.`;
 }
 
 export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
@@ -36,8 +36,10 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
       .catch(() => { /* non-blocking: the DB trigger is the real gate */ });
     return () => { active = false; };
   }, []);
-  const remaining = quota ? Math.max(quota.limit - quota.used, 0) : null;
-  const exhausted = remaining === 0;
+  const weeklyRemaining = quota ? Math.max(quota.weeklyLimit - quota.weeklyUsed, 0) : null;
+  const topUp = quota?.topUpBalance ?? 0;
+  // Blocked only when BOTH buckets are empty; a bonus check keeps submit live.
+  const exhausted = quota ? weeklyRemaining === 0 && topUp === 0 : false;
   const {
     control,
     handleSubmit,
@@ -68,14 +70,14 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
   async function onSubmit(values: SubmissionInput) {
     setFormError(null);
     if (exhausted) {
-      setFormError(resetCopy(quota?.resetsAt ?? null, quota?.limit ?? 3));
+      setFormError(resetCopy(quota?.resetsAt ?? null, quota?.weeklyLimit ?? 3));
       return;
     }
     const result = await createInvestigation(createClient(), values);
     if ("error" in result) {
       setFormError(
         result.quotaExceeded
-          ? resetCopy(result.resetsAt ?? null, quota?.limit ?? 3)
+          ? resetCopy(result.resetsAt ?? null, quota?.weeklyLimit ?? 3)
           : "We couldn’t start the check. " + result.error,
       );
       return;
@@ -170,8 +172,9 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
 
       {quota ? (
         <p className="text-[13px] leading-[1.5] text-ink-soft">
-          {remaining} of {quota.limit} checks left
+          {weeklyRemaining} of {quota.weeklyLimit} weekly checks left
           {quota.resetsAt ? ` · resets ${new Date(quota.resetsAt).toLocaleDateString()}` : ""}
+          {topUp > 0 ? ` · +${topUp} bonus checks` : ""}
         </p>
       ) : null}
 

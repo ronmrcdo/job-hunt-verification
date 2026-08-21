@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createInvestigation, getInvestigation, recentInvestigations } from "../investigations";
+import { createInvestigation, getInvestigation, recentInvestigations, quotaStatus } from "../investigations";
 
 // Minimal chainable stub. Each terminal (`.single()`, awaited select) resolves
 // with the queued script entry.
@@ -73,5 +73,26 @@ describe("recentInvestigations", () => {
     const q = client._calls.find((c: any) => c.op === "select");
     expect(q._order).toEqual(["created_at", { ascending: false }]);
     expect(q._limit).toBe(5);
+  });
+});
+
+describe("quotaStatus", () => {
+  it("maps the four-column RPC row to the QuotaStatus shape", async () => {
+    const client = {
+      rpc: () => ({
+        single: () =>
+          Promise.resolve({
+            data: { weekly_used: 2, weekly_limit: 3, resets_at: "2026-08-28T00:00:00Z", top_up_balance: 4 },
+          }),
+      }),
+    } as any;
+    const q = await quotaStatus(client);
+    expect(q).toEqual({ weeklyUsed: 2, weeklyLimit: 3, resetsAt: "2026-08-28T00:00:00Z", topUpBalance: 4 });
+  });
+
+  it("falls back to safe defaults when the row is empty", async () => {
+    const client = { rpc: () => ({ single: () => Promise.resolve({ data: null }) }) } as any;
+    const q = await quotaStatus(client);
+    expect(q).toEqual({ weeklyUsed: 0, weeklyLimit: 3, resetsAt: null, topUpBalance: 0 });
   });
 });

@@ -17,7 +17,7 @@ import { FlowProvider, useFlow } from "../../../lib/flow-context";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  quotaStatus.mockResolvedValue({ used: 0, limit: 3, resetsAt: null });
+  quotaStatus.mockResolvedValue({ weeklyUsed: 0, weeklyLimit: 3, resetsAt: null, topUpBalance: 0 });
   window.sessionStorage.clear();
 });
 
@@ -108,16 +108,16 @@ describe("NewCheckForm", () => {
   });
 
   it("shows remaining checks and the reset date", async () => {
-    quotaStatus.mockResolvedValueOnce({ used: 1, limit: 3, resetsAt: "2026-09-04T00:00:00Z" });
+    quotaStatus.mockResolvedValueOnce({ weeklyUsed: 1, weeklyLimit: 3, resetsAt: "2026-09-04T00:00:00Z", topUpBalance: 0 });
     createInvestigation.mockResolvedValue({ id: "abc" });
     render(<NewCheckForm initialJobText="x" />);
-    expect(await screen.findByText(/2 of 3 checks left/i)).toBeInTheDocument();
+    expect(await screen.findByText(/2 of 3 weekly checks left/i)).toBeInTheDocument();
   });
 
-  it("disables submit and blocks the call when the quota is exhausted", async () => {
-    quotaStatus.mockResolvedValueOnce({ used: 3, limit: 3, resetsAt: "2026-09-04T00:00:00Z" });
+  it("disables submit and blocks the call when both buckets are exhausted", async () => {
+    quotaStatus.mockResolvedValueOnce({ weeklyUsed: 3, weeklyLimit: 3, resetsAt: "2026-09-04T00:00:00Z", topUpBalance: 0 });
     render(<NewCheckForm initialJobText="Acme VA role" />);
-    await screen.findByText(/0 of 3 checks left/i);
+    await screen.findByText(/0 of 3 weekly checks left/i);
     const button = screen.getByRole("button", { name: /run the check/i });
     expect(button).toBeDisabled();
     await userEvent.click(button);
@@ -125,13 +125,27 @@ describe("NewCheckForm", () => {
   });
 
   it("maps a quota rejection on submit to the reset message", async () => {
-    quotaStatus.mockResolvedValueOnce({ used: 2, limit: 3, resetsAt: null });
+    quotaStatus.mockResolvedValueOnce({ weeklyUsed: 2, weeklyLimit: 3, resetsAt: null, topUpBalance: 0 });
     createInvestigation.mockResolvedValueOnce({
       error: "check_quota_exceeded", quotaExceeded: true, resetsAt: "2026-09-04T00:00:00Z",
     });
     render(<NewCheckForm initialJobText="Acme VA role" />);
     await userEvent.click(screen.getByRole("button", { name: /run the check/i }));
-    expect(await screen.findByText(/used all 3 checks/i)).toBeInTheDocument();
+    expect(await screen.findByText(/used all 3 weekly checks/i)).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("shows weekly remaining and bonus count, submit enabled when bonus remains", async () => {
+    quotaStatus.mockResolvedValueOnce({ weeklyUsed: 3, weeklyLimit: 3, resetsAt: "2026-08-28T00:00:00Z", topUpBalance: 4 });
+    render(<NewCheckForm initialJobText="x" />);
+    await screen.findByText(/0 of 3 weekly checks left/i);
+    expect(screen.getByText(/\+4 bonus checks/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /run the check/i })).toBeEnabled();
+  });
+
+  it("disables submit only when weekly is exhausted AND balance is 0", async () => {
+    quotaStatus.mockResolvedValueOnce({ weeklyUsed: 3, weeklyLimit: 3, resetsAt: "2026-08-28T00:00:00Z", topUpBalance: 0 });
+    render(<NewCheckForm initialJobText="x" />);
+    expect(await screen.findByRole("button", { name: /run the check/i })).toBeDisabled();
   });
 });
