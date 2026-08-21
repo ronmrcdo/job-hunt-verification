@@ -72,3 +72,42 @@ def test_existing_users_backfilled():
 
 def test_verify_rls_has_provisioning_case():
     assert "case 13" in VERIFY
+
+
+ENFORCE = _sql("20260821130200_enforce_check_quota_weekly_topup.sql")
+
+
+def test_enforce_is_security_definer():
+    assert "create or replace function enforce_check_quota()" in ENFORCE
+    assert "security definer" in ENFORCE
+    assert "set search_path = public" in ENFORCE
+
+
+def test_enforce_reads_settings_from_table():
+    assert "app_setting('check_quota_limit', '3')" in ENFORCE
+    assert "app_setting('check_quota_window_days', '7')" in ENFORCE
+
+
+def test_enforce_counts_only_weekly_source_in_window():
+    assert "quota_source = 'weekly'" in ENFORCE
+    assert "created_at > now() - (win || ' days')::interval" in ENFORCE
+
+
+def test_enforce_charges_weekly_then_topup_with_row_lock():
+    assert "new.quota_source := 'weekly'" in ENFORCE
+    assert "from user_check_quota" in ENFORCE
+    assert "for update" in ENFORCE
+    assert "top_up_balance = top_up_balance - 1" in ENFORCE
+    assert "new.quota_source := 'top_up'" in ENFORCE
+
+
+def test_enforce_denies_with_pt429_and_hint_and_logs():
+    assert "auth.uid() is null" in ENFORCE
+    assert "raise log" in ENFORCE
+    assert "pt429" in ENFORCE
+    assert "check_quota_exceeded" in ENFORCE
+    assert "hint" in ENFORCE
+
+
+def test_verify_rls_has_topup_case():
+    assert "case 14" in VERIFY

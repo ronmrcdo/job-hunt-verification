@@ -274,7 +274,7 @@ reset role;
 
 -- -----------------------------------------------------------------------
 -- Case 9: per-user rolling quota (spec §4.1). Seeds 3 rows for user A in-window,
--- asserts the 4th is rejected (PT429), user B is unaffected, and a >14-day-old
+-- asserts the 4th is rejected (PT429), user B is unaffected, and a >7-day-old
 -- row does not count.
 -- -----------------------------------------------------------------------
 do $$
@@ -287,11 +287,11 @@ begin
   delete from investigations where user_id in (a, b, cc);
   -- seed as service role (bypasses the trigger's auth.uid() path: auth.uid() is
   -- null here, so insert directly with explicit user_id + created_at)
-  insert into investigations (user_id, submission, status, created_at) values
-    (a, '{"job_text":"x"}', 'done', now()),
-    (a, '{"job_text":"x"}', 'done', now()),
-    (a, '{"job_text":"x"}', 'done', now()),
-    (a, '{"job_text":"x"}', 'done', now() - interval '20 days');  -- ages out
+  insert into investigations (user_id, submission, status, created_at, quota_source) values
+    (a, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (a, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (a, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (a, '{"job_text":"x"}', 'done', now() - interval '20 days', 'weekly');  -- ages out
   -- Now act as user A via JWT claim so auth.uid() = a and the trigger fires.
   perform set_config('request.jwt.claims', json_build_object('sub', a)::text, true);
   set local role authenticated;
@@ -313,10 +313,10 @@ begin
   -- excluding aged-out correctly allows it (used=2 < 3). This guards against a
   -- regression where the >now() - interval predicate becomes <= or is omitted.
   reset role;
-  insert into investigations (user_id, submission, status, created_at) values
-    (cc, '{"job_text":"x"}', 'done', now()),
-    (cc, '{"job_text":"x"}', 'done', now()),
-    (cc, '{"job_text":"x"}', 'done', now() - interval '20 days');  -- ages out
+  insert into investigations (user_id, submission, status, created_at, quota_source) values
+    (cc, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (cc, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (cc, '{"job_text":"x"}', 'done', now() - interval '20 days', 'weekly');  -- ages out
   perform set_config('request.jwt.claims', json_build_object('sub', cc)::text, true);
   set local role authenticated;
   insert into investigations (submission) values ('{"job_text":"x"}');
@@ -423,6 +423,54 @@ begin
   update app_settings set value = '0' where key = 'default_top_up_balance';
   delete from auth.users where id = u;
   raise notice 'Case 13 PASS';
+end $$;
+
+-- -----------------------------------------------------------------------
+-- Case 14: top-up fallthrough + double-spend guard (spec §4.1/§4.7). User has
+-- weekly exhausted (3 weekly rows in-window) and a top_up_balance of 2. Two
+-- more inserts must succeed and stamp 'top_up', decrementing the balance to 0;
+-- the next insert must raise PT429.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-0000000000e4';
+  bal int;
+  src text;
+  denied boolean := false;
+begin
+  delete from auth.users where id = u;                -- cascade clears quota row
+  insert into auth.users (id, email) values (u, 'topup@example.com');  -- provisions balance 0
+  update user_check_quota set top_up_balance = 2 where user_id = u;    -- seed balance directly (owner bypasses RLS); grant_top_up() lands in Task 5
+  -- weekly exhausted: three in-window weekly rows
+  insert into investigations (user_id, submission, status, created_at, quota_source) values
+    (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
+    (u, '{"job_text":"x"}', 'done', now(), 'weekly');
+
+  perform set_config('request.jwt.claims', json_build_object('sub', u)::text, true);
+  set local role authenticated;
+
+  insert into investigations (submission) values ('{"job_text":"x"}')
+    returning quota_source into src;
+  if src is distinct from 'top_up' then reset role; raise exception 'Case 14 FAIL: 4th insert stamped % (expected top_up)', src; end if;
+
+  insert into investigations (submission) values ('{"job_text":"x"}')
+    returning quota_source into src;
+  if src is distinct from 'top_up' then reset role; raise exception 'Case 14 FAIL: 5th insert stamped % (expected top_up)', src; end if;
+
+  begin
+    insert into investigations (submission) values ('{"job_text":"x"}');
+  exception when sqlstate 'PT429' then denied := true;
+  end;
+  reset role;
+  if not denied then raise exception 'Case 14 FAIL: 6th insert (both buckets empty) was not rejected'; end if;
+
+  select top_up_balance into bal from user_check_quota where user_id = u;
+  if bal is distinct from 0 then raise exception 'Case 14 FAIL: balance % (expected 0)', bal; end if;
+
+  delete from investigations where user_id = u;  -- no ON DELETE CASCADE on investigations_user_id_fkey
+  delete from auth.users where id = u;
+  raise notice 'Case 14 PASS';
 end $$;
 
 rollback;
