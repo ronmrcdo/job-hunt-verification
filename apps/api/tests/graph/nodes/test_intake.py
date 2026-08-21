@@ -160,3 +160,42 @@ async def test_intake_keeps_a_real_candidate_real_domain(monkeypatch):
         job_text="Acme is hiring", company_name="Acme", recruiter_email="jo@acrne.com"))
     ent = (await intake.intake_extraction(state))["entities"]
     assert ent.candidate_real_domain == "acme.com"
+
+@pytest.mark.asyncio
+async def test_intake_appends_fetched_posting_as_untrusted_data(monkeypatch):
+    # A link-only submission: job_text is empty, the page text arrived via
+    # the url_fetch node on state.fetched_posting. It must reach the LLM
+    # inside the untrusted <<<JOB ...>>> block, not the system prompt.
+    seen = {}
+    async def fake_call(model, schema, messages, *, node):
+        seen["messages"] = messages
+        return ExtractedEntities(company_name="Acme Global"), NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(
+        submission=RawSubmission(job_text="", job_url="https://acme.co/j"),
+        fetched_posting="Acme Global is hiring. Contact John Smith on Telegram.")
+    out = await intake.intake_extraction(state)
+
+    system_text, user_text = seen["messages"][0][1], seen["messages"][1][1]
+    assert "Acme Global is hiring" in user_text          # fetched text present …
+    assert "Acme Global is hiring" not in system_text    # … as data, not instruction
+    assert out["entities"].company_name == "Acme Global"
+
+
+@pytest.mark.asyncio
+async def test_intake_caps_combined_text(monkeypatch):
+    monkeypatch.setattr(intake.settings, "max_job_text_chars", 20)
+    seen = {}
+    async def fake_call(model, schema, messages, *, node):
+        seen["messages"] = messages
+        return ExtractedEntities(), NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(
+        submission=RawSubmission(job_text="PASTED " * 5),
+        fetched_posting="FETCHED " * 20)
+    await intake.intake_extraction(state)
+    user_text = seen["messages"][1][1]
+    # The combined posting text inside the delimiters is capped to 20 chars.
+    assert "FETCHED FETCHED FETCHED" not in user_text
