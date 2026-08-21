@@ -11,7 +11,7 @@ from app import cache
 from app.config import settings
 from app.cost_tracker import summarize
 from app.graph.state import FinalAssessment, Finding, Source
-from app.worker.persistence import Persistence, shape
+from app.worker.persistence import Persistence, display_entities, shape
 from app.worker.runner import run_and_emit
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ async def handle_requested(inv_id: uuid.UUID, *, persistence: Persistence, run=r
                 inv_id, assessment=_a(cached), findings=_f(cached), sources=_s(cached),
                 cost=cached.get("cost", {}), what_to_verify=cached.get("what_to_verify", []),
                 check_count=n, title=cached.get("title"),
+                entities=cached.get("entities"),
                 status="done")   # atomic; cache-hit writes NO steps (spec §5)
             return "done"
 
@@ -67,9 +68,10 @@ async def handle_requested(inv_id: uuid.UUID, *, persistence: Persistence, run=r
     cost = summarize(state.cost_events)
     what = state.deterministic_signals.get("what_to_verify", [])
     title = _title(state.entities)
+    entities = display_entities(state.entities)
     await persistence.persist_result(inv_id, assessment=state.assessment, findings=state.findings,
                                      sources=state.sources, cost=cost, what_to_verify=what,
-                                     title=title,
+                                     title=title, entities=entities,
                                      status=status)   # atomic 'done' | 'deadline_exceeded'
     if key and status == "done":
         shaped_sources, shaped_findings, shaped_assessment, shaped_what = shape(
@@ -78,7 +80,8 @@ async def handle_requested(inv_id: uuid.UUID, *, persistence: Persistence, run=r
             "assessment": shaped_assessment.model_dump(mode="json") if shaped_assessment else None,
             "findings": [f.model_dump(mode="json") for f in shaped_findings],
             "sources": [s.model_dump(mode="json") for s in shaped_sources],
-            "cost": cost, "what_to_verify": shaped_what, "title": title})
+            "cost": cost, "what_to_verify": shaped_what, "title": title,
+            "entities": entities})
     return status
 
 

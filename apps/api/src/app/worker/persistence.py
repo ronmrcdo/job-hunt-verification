@@ -30,6 +30,25 @@ def shape(sources, findings, assessment, what_to_verify):
     return sources, findings, assessment, what_to_verify
 
 
+# The client-visible subset of ExtractedEntities: exactly the fields the
+# report's detail grid renders (job, company, recruiter, channel). The
+# internal signals the checks nodes use — company_domain,
+# candidate_real_domain, key_phrases — deliberately stay server-side.
+_DISPLAY_FIELDS = ("company_name", "job_title", "salary", "recruiter_name", "contact_channel")
+
+
+def display_entities(entities) -> dict | None:
+    """Whitelist + defang the extracted entities for storage. Returns None
+    when the posting yielded none of them, so the column stays null rather
+    than holding an all-null object the client would have to special-case."""
+    if entities is None:
+        return None
+    out = {f: getattr(entities, f, None) for f in _DISPLAY_FIELDS}
+    if not any(out.values()):
+        return None
+    return {k: (defang_text(v) if v else None) for k, v in out.items()}
+
+
 class Persistence:
     """The real StepSink + result/row writer, bound to db.get_pool(). The
     worker is the only writer of client-visible investigation data (spec §3);
@@ -100,7 +119,8 @@ class Persistence:
         return RawSubmission(**row["submission"]), row["status"]
 
     async def persist_result(self, inv_id, *, assessment, findings, sources, cost,
-                             what_to_verify, check_count=None, status=None, title=None) -> None:
+                             what_to_verify, check_count=None, status=None, title=None,
+                             entities=None) -> None:
         # status is optional so this write can double as the terminal write:
         # folding status into the same UPDATE as the results makes the pair
         # atomic on one connection, closing the crash window where a row was
@@ -108,7 +128,8 @@ class Persistence:
         # title is the worker-derived display label (extracted company name,
         # falling back to job title); defanged here because it originates in
         # untrusted posting text and is client-visible, same as every other
-        # column this method writes.
+        # column this method writes. entities arrives already whitelisted and
+        # defanged by display_entities() — this method does not re-defang it.
         sources, findings, assessment, what_to_verify = shape(sources, findings, assessment, what_to_verify)
         pool = await db.get_pool()
         args = [
@@ -117,9 +138,10 @@ class Persistence:
             json.dumps([s.model_dump(mode="json") for s in sources]),
             json.dumps(cost), json.dumps(what_to_verify), check_count,
             defang_text(title) if title else None,
+            json.dumps(entities) if entities else None,
         ]
         set_cols = ("assessment=%s, findings=%s, sources=%s, cost=%s, "
-                    "what_to_verify=%s, check_count=%s, title=%s")
+                    "what_to_verify=%s, check_count=%s, title=%s, entities=%s")
         if status is not None:
             set_cols += ", status=%s"
             args.append(status)
