@@ -17,11 +17,25 @@ x-api-env: &api-env
   # via extra_hosts below.
   DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54322/postgres
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  # Empty = real api.openai.com. To use the local llama.cpp service below, set
+  # OPENAI_BASE_URL=http://llama:8080/v1 (plus CHEAP_MODEL/STRONG_MODEL to the
+  # served model id) — start it with `docker compose --profile llm up`.
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
   TAVILY_API_KEY: ${TAVILY_API_KEY:-}
   CHEAP_MODEL: ${CHEAP_MODEL:-gpt-5.6-luna}
   STRONG_MODEL: ${STRONG_MODEL:-gpt-5.6-luna}
-  CHEAP_REASONING_EFFORT: ${CHEAP_REASONING_EFFORT:-low}
-  STRONG_REASONING_EFFORT: ${STRONG_REASONING_EFFORT:-high}
+  # `-` (not `:-`) so an explicit empty value passes through as "omit the param"
+  # (DeepSeek non-thinking mode); only an UNSET var falls back to the default.
+  CHEAP_REASONING_EFFORT: ${CHEAP_REASONING_EFFORT-low}
+  STRONG_REASONING_EFFORT: ${STRONG_REASONING_EFFORT-high}
+  # Structured-output coercion. Defaults are OpenAI-native (strict json_schema).
+  # DeepSeek rejects json_schema ("response_format type is unavailable"), so a
+  # DeepSeek deployment sets STRUCTURED_OUTPUT_METHOD=function_calling and
+  # STRUCTURED_OUTPUT_STRICT=false in the repo-root .env.
+  STRUCTURED_OUTPUT_METHOD: ${STRUCTURED_OUTPUT_METHOD:-json_schema}
+  STRUCTURED_OUTPUT_STRICT: ${STRUCTURED_OUTPUT_STRICT:-true}
+  # Per-1M-token USD pricing for the cost tracker; unset = $0 (unknown model).
+  COST_PRICES_JSON: ${COST_PRICES_JSON:-}
 
 services:
   # Self-hosted Inngest — the single-binary dev server. Matches the worker
@@ -41,7 +55,15 @@ services:
   # Inngest worker — the ONLY HTTP surface Inngest calls back into.
   api-worker:
     build: ./apps/api
-    command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
+    # --reload + a bind mount of the source = live reload on host edits. Only
+    # src/ is mounted (the editable `app` package points there); the image's
+    # /app/.venv is left intact. --reload-dir scopes the watcher to src so it
+    # doesn't crawl the venv.
+    command: >
+      uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
+      --reload --reload-dir /app/src
+    volumes:
+      - ./apps/api/src:/app/src
     environment:
       <<: *api-env
       # One var sets both the API and event origins for the SDK client.
@@ -54,7 +76,12 @@ services:
   # V0 synchronous HTTP API (app.main) — same image, different entrypoint.
   api-http:
     build: ./apps/api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+    # Same live-reload setup as api-worker (shared source, shared image).
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8080
+      --reload --reload-dir /app/src
+    volumes:
+      - ./apps/api/src:/app/src
     environment: *api-env
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -65,6 +92,10 @@ services:
   web:
     build:
       context: ./apps/web
+      # Dev stage: deps only, `pnpm dev`. Skips the prod compile (the command +
+      # bind mount below run the watcher against live source instead). Swap to
+      # `target: prod` to build the shippable image from this same Dockerfile.
+      target: dev
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
@@ -75,8 +106,75 @@ services:
     # `extra_hosts: ["host.docker.internal:host-gateway"]`, and point the URL at
     # host.docker.internal — but note the browser must resolve that name too.
     network_mode: host
+    # Run the Next dev server (Fast Refresh) instead of the image's compiled
+    # `pnpm start`, and bind the source in so host edits hot-reload with no
+    # rebuild. The anonymous volumes shadow the bind mount so the Linux-built
+    # node_modules and .next survive (the host copies must not clobber them).
+    command: pnpm dev
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
     environment:
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      # Dev toolchain needs this; the image bakes NODE_ENV=production.
+      NODE_ENV: development
     depends_on:
       - api-http
+
+  # MailHog — catch-all SMTP sink for local dev. Nothing is forced through it
+  # yet; point a mailer at smtp://<host>:1025 and read what it captures at the
+  # web UI on :8025. To route Supabase Auth (sign-up confirmation) emails here,
+  # set the SMTP host/port in supabase/config.toml [auth.email.smtp] to
+  # host.docker.internal:1025 (Supabase runs under its own `supabase start`
+  # stack, not this compose).
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025" # SMTP intake
+      - "8025:8025" # web UI (http://localhost:8025)
+
+  # Local OpenAI-compatible LLM — a drop-in substitute for the ChatGPT/OpenAI
+  # API in dev. `llama-server` exposes /v1/chat/completions on :8080; the Python
+  # services reach it at http://llama:8080/v1 when OPENAI_BASE_URL points there.
+  #
+  # Opt-in: gated behind the `llm` profile so a plain `docker compose up` does
+  # NOT pull the image or download a model. Bring it up with:
+  #   OPENAI_BASE_URL=http://llama:8080/v1 \
+  #   CHEAP_MODEL=<served-id> STRONG_MODEL=<served-id> \
+  #   docker compose --profile llm up
+  #
+  # -hf pulls the GGUF from Hugging Face on first run (cached in the named
+  # volume). GPU: swap the image for `:server-cuda` and add a `deploy.resources`
+  # GPU reservation; the default image is CPU-only.
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    profiles: ["llm"]
+    # --parallel gives the server multiple decode slots so the research node's
+    # bounded-concurrency summaries actually run in parallel instead of
+    # serializing behind one slot. -c is the TOTAL context, split across slots,
+    # so it's scaled up with the slot count.
+    command: >
+      -hf ${LLAMA_HF_REPO:-bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M}
+      --host 0.0.0.0 --port 8080
+      -c ${LLAMA_CTX:-32768}
+      --parallel ${LLAMA_PARALLEL:-4}
+      --jinja
+    environment:
+      # Where -hf caches downloaded GGUFs (persisted by the volume below).
+      LLAMA_CACHE: /models
+    volumes:
+      - llama-models:/models
+    ports:
+      - "8081:8080" # host access (8080 is taken by api-http); in-network is :8080
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      # Generous: first boot downloads the model before /health goes green.
+      start_period: 300s
+
+volumes:
+  llama-models:
