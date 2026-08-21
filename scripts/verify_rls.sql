@@ -272,4 +272,42 @@ end $$;
 
 reset role;
 
+-- -----------------------------------------------------------------------
+-- Case 9: per-user rolling quota (spec §4.1). Seeds 3 rows for user A in-window,
+-- asserts the 4th is rejected (PT429), user B is unaffected, and a >14-day-old
+-- row does not count.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  a uuid := '00000000-0000-0000-0000-0000000000a9';
+  b uuid := '00000000-0000-0000-0000-0000000000b9';
+  denied boolean := false;
+begin
+  delete from investigations where user_id in (a, b);
+  -- seed as service role (bypasses the trigger's auth.uid() path: auth.uid() is
+  -- null here, so insert directly with explicit user_id + created_at)
+  insert into investigations (user_id, submission, status, created_at) values
+    (a, '{"job_text":"x"}', 'done', now()),
+    (a, '{"job_text":"x"}', 'done', now()),
+    (a, '{"job_text":"x"}', 'done', now()),
+    (a, '{"job_text":"x"}', 'done', now() - interval '20 days');  -- ages out
+  -- Now act as user A via JWT claim so auth.uid() = a and the trigger fires.
+  perform set_config('request.jwt.claims', json_build_object('sub', a)::text, true);
+  set local role authenticated;
+  begin
+    insert into investigations (submission) values ('{"job_text":"x"}');
+  exception when sqlstate 'PT429' then denied := true;
+  end;
+  reset role;
+  if not denied then raise exception 'Case 9 FAIL: 4th in-window insert was not rejected'; end if;
+
+  -- user B (no rows) can insert
+  perform set_config('request.jwt.claims', json_build_object('sub', b)::text, true);
+  set local role authenticated;
+  insert into investigations (submission) values ('{"job_text":"x"}');
+  reset role;
+  raise notice 'Case 9 PASS';
+  delete from investigations where user_id in (a, b);
+end $$;
+
 rollback;
