@@ -24,6 +24,24 @@ create table if not exists investigations (
   created_at timestamptz not null default now()
 );
 
+-- Re-application guard. This migration is a DESTRUCTIVE clean break: the
+-- `delete from investigations` below runs before the first statement that
+-- would fail on a second run (`add column user_id`), so re-applying it against
+-- an already-migrated database wipes every investigation and only then errors.
+-- The later migrations are written to be re-runnable; this one deliberately is
+-- not, so it refuses loudly instead of destroying data. `user_id` is the marker
+-- because this migration is what introduces it.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'investigations'
+       and column_name = 'user_id'
+  ) then
+    raise exception 'investigations_v1 already applied - refusing to re-run (it deletes all investigations)';
+  end if;
+end $$;
+
 -- Spec §1/§11 clean break: V0 anonymous rows are dropped; V1 requires user_id (auth.uid()).
 delete from investigations;
 

@@ -544,4 +544,101 @@ begin
   raise notice 'Case 16 PASS';
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 17: public_stats() — the landing rail's three all-time numbers.
+-- Asserts the terminal-status trigger stamps finished_at exactly once, that
+-- the aggregate counts only 'done' rows, and that anon (an unauthenticated
+-- landing-page visitor) may execute it while still being unable to select
+-- the underlying rows.
+--
+-- The function aggregates the WHOLE table, so the exact-value assertions
+-- only run when the table was empty to begin with (a fresh local stack);
+-- on a database with pre-existing rows the case degrades to delta and
+-- not-null assertions rather than reporting a false failure.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-000000000a17';
+  inv1 uuid;
+  inv2 uuid;
+  base int;
+  n int;
+  pct int;
+  med int;
+  stamp1 timestamptz;
+  stamp2 timestamptz;
+  denied boolean := false;
+begin
+  delete from investigations where user_id = u;   -- FK has no cascade: rows first
+  delete from auth.users where id = u;
+  insert into auth.users (id, email) values (u, 'stats@example.com');
+
+  select postings_checked into base from public_stats();
+
+  perform set_config('request.jwt.claims', json_build_object('sub', u)::text, true);
+  insert into investigations (user_id, submission)
+    values (u, '{"job_text":"stats case one"}'::jsonb) returning id into inv1;
+  insert into investigations (user_id, submission)
+    values (u, '{"job_text":"stats case two"}'::jsonb) returning id into inv2;
+
+  -- Backdate the first submission so the median measures a known ~100s.
+  -- This UPDATE must NOT stamp finished_at: the row is still 'queued'.
+  update investigations set created_at = now() - interval '100 seconds' where id = inv1;
+  select finished_at into stamp1 from investigations where id = inv1;
+  if stamp1 is not null then
+    raise exception 'Case 17 FAIL: non-terminal update stamped finished_at';
+  end if;
+
+  -- 4 findings, 3 of them carrying source ids => 75%.
+  update investigations set status = 'done', findings = '[
+      {"id":"f1","source_ids":["s1"]},
+      {"id":"f2","source_ids":["s1","s2"]},
+      {"id":"f3","source_ids":["s3"]},
+      {"id":"f4","source_ids":[]}
+    ]'::jsonb where id = inv1;
+  update investigations set status = 'failed' where id = inv2;
+
+  select finished_at into stamp1 from investigations where id = inv1;
+  select finished_at into stamp2 from investigations where id = inv2;
+  if stamp1 is null then raise exception 'Case 17 FAIL: done row was not stamped'; end if;
+  if stamp2 is null then raise exception 'Case 17 FAIL: failed row was not stamped'; end if;
+
+  -- Write-once: a replayed terminal write must not move the stamp.
+  update investigations set status = 'done', check_count = 1 where id = inv1;
+  if (select finished_at from investigations where id = inv1) is distinct from stamp1 then
+    raise exception 'Case 17 FAIL: replayed terminal write moved finished_at';
+  end if;
+
+  select postings_checked, findings_with_sources_pct, median_seconds
+    into n, pct, med from public_stats();
+  if n <> base + 1 then
+    raise exception 'Case 17 FAIL: postings_checked % (expected %; the failed row must not count)', n, base + 1;
+  end if;
+  if pct is null or med is null then
+    raise exception 'Case 17 FAIL: pct=% median=% (expected both non-null)', pct, med;
+  end if;
+  if base = 0 then
+    if pct <> 75 then raise exception 'Case 17 FAIL: findings pct % (expected 75)', pct; end if;
+    if med not between 95 and 105 then
+      raise exception 'Case 17 FAIL: median_seconds % (expected ~100)', med;
+    end if;
+  else
+    raise notice 'Case 17: % pre-existing rows — exact pct/median assertions skipped', base;
+  end if;
+
+  -- anon may execute the aggregate but still cannot read the rows behind it.
+  set local role anon;
+  perform public_stats();
+  begin
+    perform 1 from investigations where id = inv1;
+    if found then reset role; raise exception 'Case 17 FAIL: anon selected an investigation row'; end if;
+  exception when insufficient_privilege then denied := true;
+  end;
+  reset role;
+
+  delete from investigations where user_id = u;
+  delete from auth.users where id = u;
+  raise notice 'Case 17 PASS';
+end $$;
+
 rollback;

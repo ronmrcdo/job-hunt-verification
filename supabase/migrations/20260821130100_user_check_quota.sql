@@ -9,6 +9,7 @@ create table if not exists user_check_quota (
 );
 
 alter table user_check_quota enable row level security;
+drop policy if exists user_check_quota_select_own on user_check_quota;
 create policy user_check_quota_select_own on user_check_quota
   for select using (user_id = auth.uid());
 revoke all on user_check_quota from anon, authenticated;
@@ -35,6 +36,7 @@ begin
   return new;
 end $$;
 
+drop trigger if exists trg_provision_user_quota on auth.users;
 create trigger trg_provision_user_quota after insert on auth.users
   for each row execute function provision_user_quota();
 

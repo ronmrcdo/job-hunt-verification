@@ -22,5 +22,6 @@ begin
   return new;
 end $$;
 
+drop trigger if exists trg_reject_disposable_email on auth.users;
 create trigger trg_reject_disposable_email before insert on auth.users
   for each row execute function reject_disposable_email();

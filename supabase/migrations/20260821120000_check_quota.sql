@@ -33,5 +33,6 @@ begin
   return new;
 end $$;
 
+drop trigger if exists trg_enforce_check_quota on investigations;
 create trigger trg_enforce_check_quota before insert on investigations
   for each row execute function enforce_check_quota();
