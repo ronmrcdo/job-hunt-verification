@@ -227,6 +227,83 @@ async def test_cache_write_is_shaped_and_defanged(monkeypatch):
     assert all(len(s.get("raw_excerpt", "")) <= 500 for s in captured["value"]["sources"])
 
 
+async def test_persists_display_entities(monkeypatch):
+    from app.graph.state import ExtractedEntities
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+
+    async def run(inv, sub, sink):
+        st = InvestigationState(submission=sub, entities=ExtractedEntities(
+            company_name="Acme Global", job_title="Virtual Assistant", salary="$2,500/month",
+            recruiter_name="John Smith", contact_channel="Telegram"))
+        return st, "done"
+
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["entities"] == {
+        "company_name": "Acme Global", "job_title": "Virtual Assistant",
+        "salary": "$2,500/month", "recruiter_name": "John Smith",
+        "contact_channel": "Telegram",
+    }
+
+
+async def test_entities_is_none_when_nothing_extracted(monkeypatch):
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: None)
+
+    async def run(inv, sub, sink):
+        return InvestigationState(submission=sub), "done"
+
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["entities"] is None
+
+
+async def test_cache_hit_passes_cached_entities(monkeypatch):
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: "k")
+
+    async def cached(_k):
+        return {"assessment": None, "findings": [], "sources": [], "cost": {},
+                "what_to_verify": [], "title": "Acme Global",
+                "entities": {"company_name": "Acme Global", "job_title": None,
+                             "salary": None, "recruiter_name": None,
+                             "contact_channel": None}}
+
+    async def bump(_k):
+        return 2
+
+    monkeypatch.setattr(functions.cache, "get_cached_report", cached)
+    monkeypatch.setattr(functions.cache, "bump_check_count", bump)
+
+    async def run(inv, sub, sink):
+        raise AssertionError("cache hit must not run the graph")
+
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["entities"]["company_name"] == "Acme Global"
+
+
+async def test_cache_hit_without_entities_persists_none(monkeypatch):
+    # Reports cached before the entities column existed have no such key;
+    # the read path must not KeyError on them.
+    p = FakePersistence(RawSubmission(job_text="x"))
+    monkeypatch.setattr(functions.cache, "dedupe_key", lambda s: "k")
+
+    async def cached(_k):
+        return {"assessment": None, "findings": [], "sources": [], "cost": {},
+                "what_to_verify": []}
+
+    async def bump(_k):
+        return 2
+
+    monkeypatch.setattr(functions.cache, "get_cached_report", cached)
+    monkeypatch.setattr(functions.cache, "bump_check_count", bump)
+
+    async def run(inv, sub, sink):
+        raise AssertionError("cache hit must not run the graph")
+
+    await functions.handle_requested(uuid.uuid4(), persistence=p, run=run)
+    assert p.result["entities"] is None
+
+
 async def test_handle_requested_terminal_write_is_atomic(monkeypatch):
     from app.worker import functions
     calls = []

@@ -51,3 +51,23 @@ TITLE = (MIGRATIONS / "20260821000000_investigations_title.sql").read_text().low
 def test_title_column_added_and_nulled_in_defaults_trigger():
     assert "add column if not exists title text" in TITLE
     assert "new.title := null" in TITLE  # worker-set only; client can't seed it
+
+
+ENTITIES = (MIGRATIONS / "20260822000000_investigations_entities.sql").read_text().lower() \
+    if (MIGRATIONS / "20260822000000_investigations_entities.sql").exists() else ""
+
+
+def test_entities_column_added_and_nulled_in_defaults_trigger():
+    assert "add column if not exists entities jsonb" in ENTITIES
+    assert "new.entities := null" in ENTITIES  # worker-set only; client can't seed it
+
+
+def test_entities_migration_reasserts_full_defaults_trigger_body():
+    # create-or-replace REPLACES the whole body: every column the earlier
+    # migrations null must be repeated here or its guard is silently lost.
+    for line in ("new.status := 'queued'", "new.check_count := null",
+                 "new.assessment := null", "new.findings := null",
+                 "new.sources := null", "new.cost := null",
+                 "new.what_to_verify := null", "new.started_at := null",
+                 "new.title := null", "new.finished_at := null"):
+        assert line in ENTITIES
