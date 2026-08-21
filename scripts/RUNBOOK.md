@@ -354,6 +354,30 @@ unchanged.
   `ghcr.io/ggml-org/llama.cpp:server-cuda` and add a `deploy.resources`
   GPU reservation to the `llama` service.
 
+## 8. Quota settings & top-ups (app_settings)
+
+The quota knobs live in the `app_settings` table (not GUCs, not .env — the DB
+trigger cannot read the web env). Edit them live, no deploy:
+
+```sql
+update app_settings set value = '5' where key = 'check_quota_limit';        -- weekly allowance
+update app_settings set value = '7' where key = 'check_quota_window_days';  -- rolling window
+update app_settings set value = '3' where key = 'default_top_up_balance';   -- bonus for NEW signups
+```
+
+`default_top_up_balance` applies to accounts created *after* the change; it does
+not rewrite existing balances.
+
+Grant (or claw back) bonus checks for one account as `service_role`:
+
+```sql
+select grant_top_up('<user-uuid>', 10);   -- add 10 bonus checks; returns new balance
+select grant_top_up('<user-uuid>', -5);   -- claw back 5 (raises if it would go below 0)
+```
+
+Bonus checks never refresh; they are spent only after the weekly allowance is
+used up.
+
 ## Summary
 
 None of steps 1-6 above were executed as part of authoring the migration
