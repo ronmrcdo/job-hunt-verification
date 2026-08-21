@@ -340,15 +340,23 @@ only (revoked from `authenticated`/`public`), so credits can be added
 atomically without a raw table write:
 ```
 grant_top_up(target_user uuid, n int) returns int   -- new balance
-  := insert into user_check_quota (user_id, top_up_balance) values (target_user, n)
+  := insert into user_check_quota (user_id, top_up_balance)
+       values (target_user, greatest(n, 0))            -- speculative-check-safe floor
      on conflict (user_id) do update
-       set top_up_balance = user_check_quota.top_up_balance + excluded.top_up_balance,
+       set top_up_balance = user_check_quota.top_up_balance + n,  -- real arithmetic, using n not excluded
            updated_at = now()
      returning top_up_balance
 ```
-`n` may be negative to claw back (the `check (top_up_balance >= 0)` constraint
-floors it — a claw-back below zero raises rather than going negative). This is
-the seam a future purchase/billing flow credits into.
+`n` may be negative to claw back. Note the shape: Postgres validates the
+`check (top_up_balance >= 0)` constraint against the raw `VALUES` tuple during
+`INSERT … ON CONFLICT`'s speculative-insert phase (before conflict resolution),
+and CHECKs are not deferrable — so a literal negative `n` in `VALUES` raises
+even when the update would net non-negative. Hence `greatest(n,0)` in `VALUES`
+(safe on the no-conflict path; a brand-new row cannot be clawed below 0) and the
+real `+ n` arithmetic in `DO UPDATE` (using the parameter, not
+`excluded.top_up_balance`, which equals the floored value). The final updated
+row is still checked, so `existing + n < 0` raises `check_violation` as
+intended. This is the seam a future purchase/billing flow credits into.
 
 ## 5. Data model changes
 
