@@ -61,7 +61,11 @@ def _employer_domain(*candidates: str | None) -> str | None:
 
 async def intake_extraction(state: InvestigationState) -> dict:
     sub = state.submission
-    job_text = sub.job_text[: settings.max_job_text_chars]
+    # Pasted posting + any page text fetched from a submitted link (url_fetch
+    # node). Both are untrusted, attacker-influenced content (spec §9.2) and
+    # stay inside the <<<JOB ...>>> block below. Capped as one combined blob.
+    parts = [p for p in (sub.job_text, state.fetched_posting) if p and p.strip()]
+    job_text = "\n\n".join(parts)[: settings.max_job_text_chars]
     company_hint = sub.company_name or "unknown"
     messages = [
         ("system", _SYSTEM),
