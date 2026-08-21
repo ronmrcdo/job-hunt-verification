@@ -74,4 +74,28 @@ describe("InvestigationView", () => {
     expect(screen.getByText(/couldn.t complete/i)).toBeInTheDocument();
     expect(screen.queryByText(/MODERATE/i)).not.toBeInTheDocument();
   });
+
+  it("names the company from the extraction when the user typed none", () => {
+    const investigation = {
+      ...SAMPLE_HIGH.inv,
+      status: "running",
+      submission: { job_text: "x" },
+    };
+    setLive(investigation, []);
+    renderView({ investigation, steps: [] });
+    expect(screen.getByText(/Acme Global · the posting/)).toBeInTheDocument();
+  });
+
+  it("falls back to 'The company' when nothing named it", () => {
+    const investigation = {
+      ...SAMPLE_HIGH.inv,
+      status: "running",
+      submission: { job_text: "x" },
+      title: null,
+      entities: null,
+    };
+    setLive(investigation, []);
+    renderView({ investigation, steps: [] });
+    expect(screen.getByText(/The company · the posting/)).toBeInTheDocument();
+  });
 });
