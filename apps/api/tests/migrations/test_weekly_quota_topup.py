@@ -134,3 +134,23 @@ def test_quota_status_counts_weekly_and_joins_balance():
 
 def test_verify_rls_has_quota_status_case():
     assert "case 15" in VERIFY
+
+
+GRANT = _sql("20260821130400_grant_top_up.sql")
+
+
+def test_grant_top_up_is_definer_service_role_only():
+    assert "create or replace function grant_top_up(target_user uuid, n int)" in GRANT
+    assert "security definer" in GRANT
+    assert "revoke all on function grant_top_up(uuid, int) from public, anon, authenticated" in GRANT
+    assert "grant execute on function grant_top_up(uuid, int) to service_role" in GRANT
+
+
+def test_grant_top_up_upserts_and_adds():
+    assert "on conflict (user_id) do update" in GRANT
+    assert "top_up_balance = user_check_quota.top_up_balance + n" in GRANT
+    assert "values (target_user, greatest(n, 0))" in GRANT
+
+
+def test_verify_rls_has_grant_case():
+    assert "case 16" in VERIFY

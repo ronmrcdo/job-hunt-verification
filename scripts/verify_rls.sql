@@ -505,4 +505,43 @@ begin
   raise notice 'Case 15 PASS';
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 16: grant_top_up() adds to the balance; a claw-back below zero raises
+-- (the >= 0 check on the column); authenticated cannot execute it (spec §4.7).
+-- -----------------------------------------------------------------------
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-000000000a16';
+  bal int;
+  raised boolean := false;
+  denied boolean := false;
+begin
+  delete from auth.users where id = u;
+  insert into auth.users (id, email) values (u, 'grant@example.com');   -- provisions balance 0
+
+  bal := grant_top_up(u, 10);
+  if bal <> 10 then raise exception 'Case 16 FAIL: grant returned % (expected 10)', bal; end if;
+  bal := grant_top_up(u, -3);
+  if bal <> 7 then raise exception 'Case 16 FAIL: after claw-back balance % (expected 7)', bal; end if;
+
+  begin
+    perform grant_top_up(u, -100);                    -- would go negative
+  exception when check_violation then raised := true;
+  end;
+  if not raised then raise exception 'Case 16 FAIL: below-zero claw-back did not raise'; end if;
+
+  -- authenticated cannot execute grant_top_up
+  perform set_config('request.jwt.claims', json_build_object('sub', u)::text, true);
+  set local role authenticated;
+  begin
+    perform grant_top_up(u, 1);
+  exception when insufficient_privilege then denied := true;
+  end;
+  reset role;
+  if not denied then raise exception 'Case 16 FAIL: authenticated executed grant_top_up'; end if;
+
+  delete from auth.users where id = u;
+  raise notice 'Case 16 PASS';
+end $$;
+
 rollback;
