@@ -58,6 +58,11 @@ class FinalAssessment(BaseModel):
 class InvestigationState(BaseModel):
     submission: RawSubmission
     entities: ExtractedEntities = Field(default_factory=ExtractedEntities)
+    # Populated by the url_fetch node from a submitted link (spec §11 URL
+    # submission). Kept separate from the immutable submission so the pasted
+    # posting and the fetched page stay distinguishable end to end.
+    fetched_posting: str | None = None
+    fetch_failed: bool = False
     sources: list[Source] = Field(default_factory=list)
     # Pre-dedupe accumulators for the parallel fan-out branches (checks/research/
     # crosspost). Additive so concurrent writers in the same superstep merge
