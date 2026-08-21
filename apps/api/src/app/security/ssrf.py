@@ -26,6 +26,17 @@ def _is_public(ip: str) -> bool:
     )
 
 
+def _parse(url: str):
+    # Python 3.12's urlsplit raises a bare ValueError on a bracketed netloc
+    # that isn't valid IPv6. A URL we can't even parse is definitionally not a
+    # valid public target, so surface it as SsrfError — the soft-failure class
+    # every outbound caller already handles — instead of leaking a ValueError.
+    try:
+        return urlparse(url)
+    except ValueError as exc:
+        raise SsrfError(f"unparseable url: {url!r}") from exc
+
+
 def resolve_public_ips(host: str) -> list[str]:
     host = host.strip("[]")
     try:
@@ -45,7 +56,7 @@ def resolve_public_ips(host: str) -> list[str]:
 
 
 def assert_public_url(url: str) -> None:
-    parsed = urlparse(url)
+    parsed = _parse(url)
     if parsed.scheme not in ("http", "https"):
         raise SsrfError(f"scheme not allowed: {parsed.scheme!r}")
     if not parsed.hostname:
@@ -61,7 +72,7 @@ def validate_and_pin(url: str) -> tuple[str, str]:
     guard, spec §9.3) — the IP returned here is the one that was actually
     checked against the private/loopback/link-local/metadata blocklist.
     """
-    parsed = urlparse(url)
+    parsed = _parse(url)
     if parsed.scheme not in ("http", "https"):
         raise SsrfError(f"scheme not allowed: {parsed.scheme!r}")
     if not parsed.hostname:

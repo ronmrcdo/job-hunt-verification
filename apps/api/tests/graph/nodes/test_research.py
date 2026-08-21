@@ -29,6 +29,44 @@ async def test_company_research_summarizes_each_hit(monkeypatch):
     assert out["cost_events"][0].usd == 0.001
 
 @pytest.mark.asyncio
+async def test_summarization_is_page_capped_and_concurrency_bounded(monkeypatch):
+    # A single-slot local LLM serializes concurrent calls, so company_research
+    # must not fan out 10-wide: it caps the number of pages summarized and the
+    # number of summaries in flight at once (config knobs).
+    import asyncio
+    from app.config import settings
+
+    async def fake_search(query, *, max_results=5):
+        return [SearchHit(title=f"h{i}", url=f"https://acme.com/{i}", content="c") for i in range(20)]
+    async def fake_fetch(url, *, max_bytes=2_000_000):
+        return FetchResult(url=url, ok=True, status=200, text="Acme is a real SaaS company.")
+
+    inflight = 0
+    peak = 0
+    calls = 0
+    async def fake_call(model, schema, messages, *, node):
+        nonlocal inflight, peak, calls
+        calls += 1
+        inflight += 1
+        peak = max(peak, inflight)
+        await asyncio.sleep(0)  # let siblings pile up if unbounded
+        inflight -= 1
+        return schema(summary="Acme is an established SaaS company.", relevant=True), \
+            NodeUsage(node=node, model="cheap", usd=0.001)
+
+    monkeypatch.setattr(research, "tavily_search", fake_search)
+    monkeypatch.setattr(research, "safe_fetch", fake_fetch)
+    monkeypatch.setattr(research, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+                              entities=ExtractedEntities(company_name="Acme", company_domain="acme.com"))
+    out = await research.company_research(state)
+    assert calls == settings.research_max_pages
+    assert peak <= settings.research_concurrency
+    assert len(out["raw_sources"]) == settings.research_max_pages
+
+
+@pytest.mark.asyncio
 async def test_failed_fetch_becomes_unresolved_not_crash(monkeypatch):
     async def fake_search(query, *, max_results=5):
         return [SearchHit(title="x", url="https://acme.com/404", content="")]

@@ -165,3 +165,65 @@ def test_mixed_timeout_and_real_coverage_only_counts_real():
     a = compute_assessment(_state(findings))
     assert a.coverage == pytest.approx(1 / 6, abs=0.001)  # rounded to 3 decimals
     assert a.confidence == "LOW"
+
+
+def test_payment_floor_fires_for_fee_stated_in_the_posting():
+    # Real-world miss (case CE710EBD): the posting itself demanded a training
+    # fee before onboarding. The analysis node filed it under `job` (it came
+    # from the posting, not a conversation), so the old
+    # category == "communication" gate skipped the floor and the report
+    # rendered LOW RISK next to an advance-fee demand. The spec's §5 rule 2
+    # assumed advance-fee requests only arrive via conversation paste; they
+    # also appear in posting text.
+    a = compute_assessment(_state([
+        _f("pay", "low", category="job",
+           claim="The job posting requires a small training fee before onboarding"),
+    ]))
+    assert a.band in ("HIGH", "CRITICAL")
+
+
+def test_payment_floor_ignores_legitimizing_fee_mentions():
+    # Guard for the widened category gate: a finding that says the posting
+    # does NOT ask for money contains a payment marker but is evidence of
+    # legitimacy. Flooring on it would invert the signal.
+    a = compute_assessment(_state([
+        _f("clean", "info", direction="legitimizing", category="job",
+           claim="The posting states no training fee or equipment fee is required"),
+    ]))
+    assert a.band == "LOW"
+
+
+def test_payment_floor_ignores_unverifiable_fee_mentions():
+    # An `unverifiable` finding contributes 0 to the score by design; it must
+    # not trigger the floor either, or "we couldn't confirm whether a fee is
+    # charged" would read as "a fee is charged".
+    a = compute_assessment(_state([
+        _f("unk", "low", direction="unverifiable", category="job",
+           claim="We could not confirm whether an onboarding fee is charged"),
+    ]))
+    assert a.band == "LOW"
+
+
+def test_posting_only_suspicion_against_a_named_company_caps_at_moderate():
+    # Now reachable in V0: with analysis deriving provenance from what a
+    # finding cites, suspicion resting solely on the submitter's pasted
+    # posting is user_provided_unverified, so the §9.1 sabotage cap applies —
+    # pasting a fabricated posting naming a real company can no longer alone
+    # produce a HIGH/CRITICAL report about that company.
+    a = compute_assessment(_state([
+        _f("f1", "high", prov="user_provided_unverified", category="job"),
+        _f("f2", "high", prov="user_provided_unverified", category="company"),
+    ], company="Acme"))
+    assert a.band == "MODERATE"
+
+
+def test_payment_floor_outranks_the_sabotage_cap():
+    # Deliberate spec ordering (§5 rule 2): the floor describes "the
+    # opportunity as presented to this user", so an advance-fee demand in the
+    # submitted posting still floors at HIGH. The report's provenance label
+    # carries the "we can't verify this" caveat instead of the band hiding it.
+    a = compute_assessment(_state([
+        _f("pay", "critical", prov="user_provided_unverified", category="job",
+           claim="The posting requires a $200 training fee before onboarding"),
+    ], company="Acme"))
+    assert a.band == "HIGH"

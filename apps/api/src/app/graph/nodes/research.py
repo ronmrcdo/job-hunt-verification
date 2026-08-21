@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
+from app.config import settings
 from app.graph.state import ExtractedEntities, InvestigationState, Source
 from app.tools.tavily import tavily_search, build_company_queries
 from app.tools.fetcher import safe_fetch
@@ -92,9 +93,18 @@ async def company_research(state: InvestigationState) -> dict:
             uniq.append(h)
 
     model = cheap_model()
-    targets = uniq[:10]
+    # Cap pages and bound in-flight summaries: the cheap model may be a
+    # single-slot local LLM that serializes concurrent calls, so an unbounded
+    # 10-wide fan-out balloons the branch into minutes (see spec §12).
+    targets = uniq[:settings.research_max_pages]
+    sem = asyncio.Semaphore(settings.research_concurrency)
+
+    async def _bounded(h):
+        async with sem:
+            return await _summarize_hit(h, model, state.entities)
+
     results = await asyncio.gather(
-        *(_summarize_hit(h, model, state.entities) for h in targets), return_exceptions=True
+        *(_bounded(h) for h in targets), return_exceptions=True
     )
     sources: list[Source] = []
     cost: list = []

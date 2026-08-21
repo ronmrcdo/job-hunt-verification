@@ -28,7 +28,15 @@ def _defang_scheme(match: re.Match) -> str:
 
 def defang_url(url: str) -> str:
     out = _SCHEME_RE.sub(_defang_scheme, url)
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        # Python 3.12's urlsplit raises on brackets in the netloc that aren't
+        # a valid IPv6 (malformed URLs reach here straight from search hits).
+        # Defanging is output-safety, not a parser: the scheme is already
+        # neutralized above (which is what breaks auto-hyperlinking), so fall
+        # back to that rather than crashing the persist path.
+        return out
     if parsed.hostname:
         # urlparse always lowercases parsed.hostname, but the host may appear
         # in the original (possibly mixed-case) url in its own casing --

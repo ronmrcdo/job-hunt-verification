@@ -5,8 +5,8 @@ No LLM or network involvement. Encodes every §5 rule as code:
 
 1. One-band rule: a single soft (non-deterministic-provenance) suspicious finding
    cannot move the result past MODERATE.
-2. Payment-floor: a communication finding naming a payment/fee marker floors the
-   band at HIGH.
+2. Payment-floor: a suspicious communication *or* job finding naming a
+   payment/fee marker floors the band at HIGH.
 3. user_provided_unverified cap: if the only suspicious findings are user-provided
    and unverified, a named company cannot be pushed past MODERATE (spec §9.1
    sabotage defense).
@@ -41,8 +41,21 @@ def _agency_reframe_active(signals: dict) -> bool:
     return bool(signals.get("recruiter_is_ats")) or bool(signals.get("agency_domain"))
 
 
+# Categories whose findings can carry an advance-fee demand. `communication`
+# is the conversation-paste path the spec anticipated; `job` is the posting
+# itself, which states the fee outright often enough that gating on
+# `communication` alone let a training-fee demand render as LOW RISK.
+_PAYMENT_CATEGORIES = ("communication", "job")
+
+
 def _is_payment_finding(f: Finding) -> bool:
-    return f.category == "communication" and any(m in f.claim.lower() for m in PAYMENT_MARKERS)
+    # `direction` matters: the markers are substrings, so a legitimizing
+    # finding ("no training fee is required") or an unverifiable one ("we
+    # could not confirm whether a fee is charged") both contain a marker while
+    # being the opposite of, or silent on, the signal the floor exists for.
+    return (f.direction == "suspicious"
+            and f.category in _PAYMENT_CATEGORIES
+            and any(m in f.claim.lower() for m in PAYMENT_MARKERS))
 
 
 def score_findings(findings: list[Finding], signals: dict) -> float:
@@ -146,10 +159,10 @@ def compute_assessment(state: InvestigationState) -> FinalAssessment:
             and state.entities.company_name:
         band = _cap(band, "MODERATE")
 
-    # Rule: payment/fee request in a communication finding floors the band at
-    # HIGH, regardless of what the rest of the score says. Dormant in V0 (no V0
-    # input path produces a communication finding) but built and covered by a
-    # synthetic test.
+    # Rule: a suspicious payment/fee request floors the band at HIGH,
+    # regardless of what the rest of the score says. Reachable in V0 via a
+    # `job`-category finding (the posting demands the fee directly); the
+    # `communication` path activates with conversation paste in V1.
     if any(_is_payment_finding(f) for f in findings):
         band = _floor(band, "HIGH")
 

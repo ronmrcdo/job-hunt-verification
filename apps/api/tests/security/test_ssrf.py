@@ -21,6 +21,18 @@ def test_allows_public_url(monkeypatch):
     monkeypatch.setattr("app.security.ssrf._resolve", lambda h: ["93.184.216.34"])
     assert assert_public_url("https://example.com/jobs/123") is None
 
+def test_malformed_url_raises_ssrf_error_not_bare_valueerror():
+    # Python 3.12's urlsplit raises a bare ValueError on brackets in the netloc
+    # that aren't valid IPv6. safe_fetch only catches SsrfError, so an
+    # unparseable URL (or a malformed redirect Location) must surface as
+    # SsrfError to stay a soft failure rather than crash the fetch.
+    from app.security.ssrf import validate_and_pin
+    with pytest.raises(SsrfError):
+        assert_public_url("http://exa[mple].com/x")
+    with pytest.raises(SsrfError):
+        validate_and_pin("http://exa[mple].com/x")
+
+
 def test_wraps_resolution_failure_as_ssrf_error(monkeypatch):
     import socket
 

@@ -23,6 +23,22 @@ def test_defang_text_scrubs_urls_in_finding_claim_text():
     assert "hxxps://EVIL[.]com" in out
 
 
+def test_defang_url_malformed_netloc_does_not_crash():
+    # Python 3.12's urlsplit raises ValueError when the netloc holds a bracket
+    # that isn't a valid IPv6 (e.g. a junk Tavily hit URL). defang_url is
+    # output-safety for hostile URLs, so it must neutralize the scheme rather
+    # than crash the whole persist path.
+    out = defang_url("http://exa[mple].com/x")
+    assert out.startswith("hxxp://")
+    assert "http://" not in out
+
+
+def test_defang_text_tolerates_malformed_url():
+    out = defang_text("see http://exa[mple].com/x now")
+    assert "hxxp://" in out
+    assert "http://" not in out
+
+
 def test_accusation_detection():
     assert contains_accusation("Acme Global is a scam.") is True
     assert contains_accusation("This posting is fraudulent.") is True

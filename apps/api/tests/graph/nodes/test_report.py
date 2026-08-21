@@ -151,3 +151,38 @@ async def test_report_flags_payment_check_for_high_band(monkeypatch):
     checklist = out["deterministic_signals"]["what_to_verify"]
     assert any("pay" in item.lower() or "fee" in item.lower() or "payment" in item.lower()
                for item in checklist)
+
+
+@pytest.mark.asyncio
+async def test_report_pack_states_the_finding_counts(monkeypatch):
+    # The model was left to infer how many suspicious findings there were from
+    # a bare list, and the system prompt mandated the phrase "we found N
+    # signals consistent with known scam patterns" unconditionally. Give it
+    # the actual counts so N can be 0.
+    captured = {}
+
+    async def fake_call(model, schema, messages, *, node):
+        captured["user"] = messages[-1][1]
+        return schema(summary="s", what_to_verify=[]), NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(report, "structured_call", fake_call)
+    await report.report_generation(_state(band="LOW"))
+    assert "suspicious=1" in captured["user"]
+    assert "legitimizing=0" in captured["user"]
+    assert "unverifiable=0" in captured["user"]
+
+
+@pytest.mark.asyncio
+async def test_report_prompt_forbids_claiming_signals_when_there_are_none(monkeypatch):
+    # Case CE710EBD's contradiction: a LOW-band report opened with "shows some
+    # signals consistent with known scam patterns" because the prompt required
+    # that phrasing regardless of band. The zero case must be spelled out.
+    captured = {}
+
+    async def fake_call(model, schema, messages, *, node):
+        captured["system"] = messages[0][1]
+        return schema(summary="s", what_to_verify=[]), NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(report, "structured_call", fake_call)
+    await report.report_generation(_state(band="LOW", findings=[]))
+    system = captured["system"].lower()
+    assert "zero" in system or "0 suspicious" in system or "none" in system
+    assert "band" in system, "prompt must require the prose to agree with the decided band"

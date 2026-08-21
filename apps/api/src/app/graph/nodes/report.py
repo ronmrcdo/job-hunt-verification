@@ -36,6 +36,12 @@ _SYSTEM = (
     "Write a short, neutral risk summary for a job seeker. Rules you MUST follow: "
     "never write that a named company or person 'is a scam' or 'is fraudulent'; instead say "
     "'we found N signals consistent with known scam patterns' and attribute each to its evidence. "
+    "Your prose MUST agree with the risk band and the finding counts given below — the band is "
+    "decided deterministically and the summary only explains it. When the suspicious count is "
+    "zero, say plainly that none of the patterns we check for were found; do NOT write that "
+    "signals consistent with scam patterns were found. When it is non-zero, do not describe the "
+    "posting as clean. Describe unverifiable findings as gaps in what we could reach, never as "
+    "signals of fraud. "
     "Say plainly what was and was not examined (this is a posting-only check; conversations were "
     "not analyzed). If the recruiter uses a third-party agency/ATS domain, frame domain-mismatch "
     "as 'third-party recruitment — verify the agency', not as fraud. Output a summary and a "
@@ -53,8 +59,13 @@ def _pack(state: InvestigationState) -> str:
     for f in state.findings:
         groups[f.direction].append(f.claim)
     band = state.assessment.band if state.assessment else "UNKNOWN"
+    # Counts stated outside the delimiters, as trusted framing: left to infer
+    # them from the lists inside <<<EVIDENCE>>>, the model wrote "shows some
+    # signals consistent with known scam patterns" onto a LOW-band report.
+    counts = ", ".join(f"{k}={len(v)}" for k, v in groups.items())
     return (
         f"Risk band (already decided, do not change): {band}\n"
+        f"Finding counts (authoritative): {counts}\n"
         "<<<EVIDENCE>>>\n"
         f"Legitimizing: {groups['legitimizing']}\n"
         f"Suspicious: {groups['suspicious']}\n"

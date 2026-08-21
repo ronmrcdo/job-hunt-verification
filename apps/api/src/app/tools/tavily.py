@@ -6,6 +6,7 @@ testable helpers rather than assembled inline at call sites.
 """
 
 import asyncio
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 from tavily import TavilyClient
@@ -17,6 +18,21 @@ class SearchHit(BaseModel):
     title: str
     url: str
     content: str
+
+
+def _usable_url(url: str) -> bool:
+    """A hit is only usable evidence if its URL is a well-formed http(s) URL
+    with a host. Junk URLs are filtered here, at the single boundary both the
+    crosspost and research nodes draw hits from, so a malformed netloc never
+    reaches urlparse downstream (defang/SSRF) and a non-http URL is never
+    stored as a citable Source."""
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.hostname)
 
 
 _client: TavilyClient | None = None
@@ -39,6 +55,7 @@ async def tavily_search(query: str, *, max_results: int = 5) -> list[SearchHit]:
     return [
         SearchHit(title=r.get("title", ""), url=r.get("url", ""), content=r.get("content", ""))
         for r in data.get("results", [])
+        if _usable_url(r.get("url", ""))
     ]
 
 
