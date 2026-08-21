@@ -271,12 +271,28 @@ export function toReportViewModel(inv: Investigation): ReportVM {
       ? `CHECKED ${inv.check_count} TIMES IN THE PAST WEEK`
       : "FIRST CHECK ON THIS POSTING";
 
-  // Job title / recruiter name / contact channel have no corresponding
-  // field on `Submission` — those rows are simply never produced. Only
-  // company_name and recruiter_email round-trip from the submitted job.
+  // The grid mirrors the prototype's confidence panel: JOB, COMPANY,
+  // RECRUITER, EMAIL. Job title/salary and recruiter name/channel are only
+  // ever worker-extracted (`entities`); the company prefers what the user
+  // typed and falls back to the extraction; the email is read from the
+  // submission alone — it is taken verbatim from the user upstream and must
+  // never come from LLM output (spec §9.2).
+  const ent = inv.entities ?? {};
   const submittedRows: { label: string; value: string; mono?: boolean }[] = [];
-  if (inv.submission.company_name !== undefined)
-    submittedRows.push({ label: "Company", value: inv.submission.company_name });
+  // join() over a filtered pair, so a half-known row reads "John Smith"
+  // rather than "John Smith · " with a dangling separator.
+  const pair = (parts: (string | null | undefined)[], sep: string) =>
+    parts.filter((p): p is string => Boolean(p && p.trim())).join(sep);
+
+  const job = pair([ent.job_title, ent.salary], ", ");
+  if (job) submittedRows.push({ label: "Job", value: job });
+
+  const company = inv.submission.company_name ?? ent.company_name ?? null;
+  if (company) submittedRows.push({ label: "Company", value: company });
+
+  const recruiter = pair([ent.recruiter_name, ent.contact_channel], " · ");
+  if (recruiter) submittedRows.push({ label: "Recruiter", value: recruiter });
+
   if (inv.submission.recruiter_email !== undefined)
     submittedRows.push({ label: "Email", value: inv.submission.recruiter_email, mono: true });
   // The posting URL is captured by NewCheckForm and stored on the submission,

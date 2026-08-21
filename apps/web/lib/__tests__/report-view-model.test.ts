@@ -53,7 +53,9 @@ describe("toReportViewModel", () => {
     expect(vm.bandIndex).toBe(1);
   });
 
-  it("derives submitted rows from inv.submission, not a passed-in argument", () => {
+  it("derives submitted rows from inv.submission and inv.entities, not a passed-in argument", () => {
+    // Row composition and ordering are pinned in product-rules.test.tsx; this
+    // just checks the Email row still round-trips from `submission` verbatim.
     const vm = toReportViewModel(SAMPLE_HIGH.inv);
 
     expect(vm.submitted).toContainEqual({ label: "Company", value: "Acme Global" });
@@ -62,17 +64,13 @@ describe("toReportViewModel", () => {
       value: "acmeglobalcareers@gmail.com",
       mono: true,
     });
-    // Job title / recruiter / contact channel have no source field on
-    // Submission, so they never appear as rows.
-    expect(vm.submitted.map((r) => r.label)).not.toContain("Job");
-    expect(vm.submitted.map((r) => r.label)).not.toContain("Recruiter");
-    expect(vm.submitted.map((r) => r.label)).not.toContain("Contact channel");
   });
 
-  it("omits a submitted row entirely when the corresponding submission field is absent", () => {
+  it("omits a submitted row entirely when neither submission nor entities name it", () => {
     const vm = toReportViewModel({
       ...SAMPLE_HIGH.inv,
       submission: { job_text: "some posting" },
+      entities: null,
     });
 
     expect(vm.submitted).toEqual([]);

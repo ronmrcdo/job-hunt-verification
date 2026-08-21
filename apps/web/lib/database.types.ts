@@ -2,6 +2,7 @@
 //   supabase/migrations/20260819073420_investigations_v1.sql
 //   supabase/migrations/20260819080000_investigations_sources.sql
 //   supabase/migrations/20260821000000_investigations_title.sql
+//   supabase/migrations/20260822000000_investigations_entities.sql
 // OPERATOR: regenerate against the local stack and overwrite this file:
 //   supabase gen types typescript --local > apps/web/lib/database.types.ts
 // The jsonb payload shapes mirror apps/api/src/app/graph/state.py.
@@ -17,6 +18,7 @@ export interface Database {
           user_id: string;
           status: string;
           title: string | null;
+          entities: Json | null;
           submission: Json;
           assessment: Json | null;
           findings: Json | null;

@@ -18,6 +18,13 @@ export const SAMPLE_LOW: {
     user_id: "9e7c5c9a-0000-4000-8000-0000000000bb",
     status: "done",
     title: "Northwind Systems",
+    entities: {
+      company_name: "Northwind Systems",
+      job_title: null,
+      salary: null,
+      recruiter_name: null,
+      contact_channel: null,
+    },
     created_at: "2026-08-18T09:41:00Z",
     submission: {
       job_text: "Customer Operations Associate",

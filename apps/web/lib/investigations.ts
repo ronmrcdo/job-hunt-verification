@@ -32,6 +32,17 @@ export type Submission = {
   recruiter_email?: string;
   job_url?: string;
 };
+// Worker-extracted display entities (written by the intake node, whitelisted
+// and defanged by persistence.display_entities). Null when the posting named
+// none of them, and null for every run that finished before the entities
+// column existed — the view model treats both the same.
+export type Entities = {
+  company_name?: string | null;
+  job_title?: string | null;
+  salary?: string | null;
+  recruiter_name?: string | null;
+  contact_channel?: string | null;
+};
 export type Investigation = {
   id: string;
   user_id: string;
@@ -39,6 +50,7 @@ export type Investigation = {
   // Worker-derived display label (extracted company name, else job title);
   // null when the posting named neither — the UI renders "Untitled posting".
   title: string | null;
+  entities: Entities | null;
   submission: Submission;
   assessment: FinalAssessment | null;
   findings: Finding[] | null;
