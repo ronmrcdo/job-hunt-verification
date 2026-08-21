@@ -45,11 +45,20 @@ describe("ConfidencePanel", () => {
     expect(emailValue.getAttribute("data-mono")).toBe("true");
   });
 
-  it("renders no grid rows when submission has no company_name/recruiter_email", () => {
-    const vm = completeVM({ ...SAMPLE_HIGH.inv, submission: { job_text: "x" } });
+  it("renders no grid rows when neither the submission nor the entities name anything", () => {
+    const vm = completeVM({ ...SAMPLE_HIGH.inv, submission: { job_text: "x" }, entities: null });
     const { container } = render(<ConfidencePanel vm={vm} />);
 
     expect(container.querySelectorAll("[data-submitted-row]")).toHaveLength(0);
+  });
+
+  it("renders the four prototype rows when the worker extracted them", () => {
+    const vm = completeVM(SAMPLE_HIGH.inv);
+    const { container } = render(<ConfidencePanel vm={vm} />);
+
+    expect(container.querySelectorAll("[data-submitted-row]").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText("Virtual Assistant, $2,500/month")).toBeInTheDocument();
+    expect(screen.getByText("John Smith · Telegram")).toBeInTheDocument();
   });
 
   it("never renders a link", () => {

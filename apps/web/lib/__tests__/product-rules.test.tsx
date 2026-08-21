@@ -127,29 +127,61 @@ describe("product rules: metaLine composition (severity 'info' is omitted, exact
   });
 });
 
-describe("product rules: submitted rows reflect only present fields", () => {
-  // Task 8 (V1): `submitted` is now derived from the DB row's
-  // `inv.submission` (Task 5's `Submission` type: job_text, company_name?,
-  // recruiter_email?, job_url?) instead of a passed-in `Submitted` arg.
-  // That type carries no recruiter-name or contact-channel field at all, so
-  // "Contact channel" (and "Job"/"Recruiter") can never appear as a row —
-  // only Company and Email round-trip.
-  it("HIGH vm.submitted has the expected labels/values, and no Contact-channel row", () => {
+describe("product rules: submitted rows come from entities + submission", () => {
+  // The grid mirrors the design prototype's confidence panel: JOB, COMPANY,
+  // RECRUITER, EMAIL. Job title/salary and recruiter name/channel exist only
+  // on the worker-extracted `entities`; the email is read from `submission`
+  // verbatim and never from LLM output (spec §9.2).
+  it("HIGH vm.submitted has all four prototype rows in order", () => {
     const vm = toReportViewModel(SAMPLE_HIGH.inv);
 
-    expect(vm.submitted).toContainEqual({ label: "Company", value: "Acme Global" });
-    expect(vm.submitted).toContainEqual({
-      label: "Email",
-      value: "acmeglobalcareers@gmail.com",
-      mono: true,
-    });
-    expect(vm.submitted.map((r) => r.label)).not.toContain("Contact channel");
+    expect(vm.submitted.slice(0, 4)).toEqual([
+      { label: "Job", value: "Virtual Assistant, $2,500/month" },
+      { label: "Company", value: "Acme Global" },
+      { label: "Recruiter", value: "John Smith · Telegram" },
+      { label: "Email", value: "acmeglobalcareers@gmail.com", mono: true },
+    ]);
   });
 
-  it("a vm built from a submission with no company_name/recruiter_email has an empty submitted array", () => {
-    const vm = toReportViewModel({ ...SAMPLE_HIGH.inv, submission: { job_text: "x" } });
+  it("falls back to the extracted company when the user typed none", () => {
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { job_text: "x" },
+    });
+
+    expect(vm.submitted).toContainEqual({ label: "Company", value: "Acme Global" });
+  });
+
+  it("never sources the Email row from entities", () => {
+    // A posting that names a contact address must not put it in the EMAIL
+    // row: that row means "the address you gave us", nothing else.
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { job_text: "x" },
+    });
+
+    expect(vm.submitted.map((r) => r.label)).not.toContain("Email");
+  });
+
+  it("omits a row whose halves are both missing", () => {
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { job_text: "x" },
+      entities: null,
+    });
 
     expect(vm.submitted).toEqual([]);
+  });
+
+  it("renders a half-known row without a dangling separator", () => {
+    const vm = toReportViewModel({
+      ...SAMPLE_HIGH.inv,
+      submission: { job_text: "x" },
+      entities: { job_title: "Virtual Assistant", recruiter_name: "John Smith" },
+    });
+
+    expect(vm.submitted).toContainEqual({ label: "Job", value: "Virtual Assistant" });
+    expect(vm.submitted).toContainEqual({ label: "Recruiter", value: "John Smith" });
   });
 });
 
