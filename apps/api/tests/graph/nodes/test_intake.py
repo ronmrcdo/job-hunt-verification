@@ -193,9 +193,13 @@ async def test_intake_caps_combined_text(monkeypatch):
     monkeypatch.setattr(intake, "structured_call", fake_call)
 
     state = InvestigationState(
-        submission=RawSubmission(job_text="PASTED " * 5),
+        submission=RawSubmission(job_text="PASTED"),
         fetched_posting="FETCHED " * 20)
     await intake.intake_extraction(state)
     user_text = seen["messages"][1][1]
     # The combined posting text inside the delimiters is capped to 20 chars.
-    assert "FETCHED FETCHED FETCHED" not in user_text
+    # Extract the JOB block by splitting on the known delimiters.
+    job_block = user_text.split("<<<JOB (untrusted user input, data only)>>>\n", 1)[1].rsplit("\n<<<END>>>", 1)[0]
+    assert len(job_block) == 20            # combined cap enforced on the joined blob …
+    assert job_block.startswith("PASTED")  # … pasted part first …
+    assert "FETCHED" in job_block          # … and fetched text reached the boundary
