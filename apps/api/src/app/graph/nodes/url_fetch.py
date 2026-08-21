@@ -12,11 +12,14 @@ from app.graph.state import InvestigationState, RawSubmission
 from app.tools.fetcher import safe_fetch
 
 
-def _fetch_target(sub: RawSubmission) -> str | None:
+def fetch_target(sub: RawSubmission) -> str | None:
     """The URL to fetch: the explicit job_url field if given, else job_text
     when it is a single bare http(s) URL (the form's main box is labelled
     'Job link or job text'). A URL merely mentioned inside prose is text, not
-    a link submission, so a job_text with interior whitespace never matches."""
+    a link submission, so a job_text with interior whitespace never matches.
+
+    Public so evidence_assembly can label the fetched/failed Source with the
+    same derived URL without duplicating the derivation."""
     if sub.job_url:
         return sub.job_url
     text = (sub.job_text or "").strip()
@@ -27,7 +30,7 @@ def _fetch_target(sub: RawSubmission) -> str | None:
 
 
 async def url_fetch(state: InvestigationState) -> dict:
-    target = _fetch_target(state.submission)
+    target = fetch_target(state.submission)
     if target is None:
         return {}
     res = await safe_fetch(target)

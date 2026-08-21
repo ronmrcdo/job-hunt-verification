@@ -6,22 +6,22 @@ from app.tools.fetcher import FetchResult
 
 def test_fetch_target_prefers_job_url():
     sub = RawSubmission(job_text="anything", job_url="https://acme.co/careers/va")
-    assert url_fetch._fetch_target(sub) == "https://acme.co/careers/va"
+    assert url_fetch.fetch_target(sub) == "https://acme.co/careers/va"
 
 
 def test_fetch_target_falls_back_to_bare_url_in_job_text():
     sub = RawSubmission(job_text="  https://acme.co/careers/va  ")
-    assert url_fetch._fetch_target(sub) == "https://acme.co/careers/va"
+    assert url_fetch.fetch_target(sub) == "https://acme.co/careers/va"
 
 
 def test_fetch_target_ignores_url_embedded_in_prose():
     # A posting that mentions a URL is text, not a link submission.
     sub = RawSubmission(job_text="Acme is hiring, apply at http://acme.co")
-    assert url_fetch._fetch_target(sub) is None
+    assert url_fetch.fetch_target(sub) is None
 
 
 def test_fetch_target_none_when_neither():
-    assert url_fetch._fetch_target(RawSubmission(job_text="just some posting text")) is None
+    assert url_fetch.fetch_target(RawSubmission(job_text="just some posting text")) is None
 
 
 @pytest.mark.asyncio
