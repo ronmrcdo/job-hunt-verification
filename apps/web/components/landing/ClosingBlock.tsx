@@ -2,28 +2,17 @@
 
 import { Button } from "../ui/Button";
 import { Reveal, RevealItem } from "../ui/Reveal";
-import { FindingCard } from "../report/FindingCard";
-import type { FindingVM } from "../../lib/report-view-model";
 
 // Sample finding transcribed from the prototype (RULING R9):
-// Investigator Prototype.dc.html lines 154-162. Proof-of-style only — not
-// wired to a real investigation.
-const SAMPLE_FINDING: FindingVM = {
-  recordId: "F-04",
-  direction: "suspicious",
-  severity: "critical",
+// Investigator Prototype.dc.html lines 154-162. Proof-of-style only — this is a
+// static presentation, deliberately NOT the interactive FindingCard: the
+// prototype's sample omits the record id, the expand affordance, the source
+// count, and the critical tint. Reusing FindingCard here dragged all of that
+// chrome onto the landing page and broke the match.
+const SAMPLE = {
   claim: "The recruiter asked for a training fee payment",
-  metaLine: "SUSPICIOUS · SEVERITY CRITICAL · 1 SOURCE",
+  metaLine: "SUSPICIOUS · SEVERITY CRITICAL",
   provenanceLabel: "Based on the conversation you shared — we can't independently verify it.",
-  however: null,
-  sources: [
-    {
-      name: "conversation you shared",
-      stampMono: "",
-      excerpt: "The recruiter asked for a training fee payment",
-      defang: false,
-    },
-  ],
 };
 
 export interface ClosingBlockProps {
@@ -47,7 +36,17 @@ export function ClosingBlock({ onScan }: ClosingBlockProps) {
         </RevealItem>
         <RevealItem className="flex-1 basis-[380px] border border-ink p-5 max-w-[380px]">
           <div className="mb-3 text-[10px] uppercase tracking-[0.16em] text-muted">Sample finding</div>
-          <FindingCard finding={SAMPLE_FINDING} />
+          <div className="flex items-start gap-[8px]">
+            <div
+              className="mt-[2px] h-5 w-[6px] shrink-0 rounded-none"
+              style={{ background: "var(--color-critical)" }}
+            />
+            <div className="text-[18px] font-bold leading-[1.3]">{SAMPLE.claim}</div>
+          </div>
+          <div className="mt-1 pl-[14px] text-[11px] uppercase tracking-[0.1em] text-muted">{SAMPLE.metaLine}</div>
+          <div className="mt-3 rounded-none border border-rule bg-page p-2 text-[12px] leading-[1.5]">
+            {SAMPLE.provenanceLabel}
+          </div>
         </RevealItem>
       </Reveal>
     </section>

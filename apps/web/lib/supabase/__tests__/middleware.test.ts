@@ -20,11 +20,12 @@ const signedOut = () => getUser.mockResolvedValue({ data: { user: null } });
 describe("updateSession auth routing", () => {
   beforeEach(() => getUser.mockReset());
 
-  it("redirects an authenticated visitor from / to /verify", async () => {
+  // The landing page is public for everyone: signed-in visitors reach the app
+  // through the header's "Check a job" button, not an automatic bounce.
+  it("leaves an authenticated visitor on /", async () => {
     signedIn();
     const res = await updateSession(req("/"));
-    expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toBe("https://app.test/verify");
+    expect(res.status).toBe(200);
   });
 
   it("leaves an unauthenticated visitor on /", async () => {

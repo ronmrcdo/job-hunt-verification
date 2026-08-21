@@ -35,3 +35,39 @@ export function formatCaseStamp(iso: string, caseId: string): string {
   const mm = pad2(d.getUTCMinutes());
   return `${day}.${month}.${year} · ${hh}:${mm} PDT · CASE ${caseId}`;
 }
+
+// ---------------------------------------------------------------------------
+// Landing-page stat formatting (the "So far" rail).
+//
+// Every helper accepts the nullable value straight off the `public_stats()`
+// RPC and renders EM_DASH when it is null, so the rail never has to decide
+// what "no data yet" looks like — an empty database and a failed fetch render
+// identically, and neither can be mistaken for a real zero-ish number.
+// ---------------------------------------------------------------------------
+
+const EM_DASH = "—";
+
+export function formatCount(n: number | null): string {
+  if (n === null) return EM_DASH;
+  // en-US explicitly, not the runner's locale: the rail's digits must not
+  // depend on where the page renders (same determinism rule as the stamps).
+  return n.toLocaleString("en-US");
+}
+
+export function formatPercent(n: number | null): string {
+  return n === null ? EM_DASH : `${n}%`;
+}
+
+export function formatDuration(seconds: number | null): string {
+  if (seconds === null) return EM_DASH;
+  const total = Math.round(seconds);
+  if (total >= 3600) {
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m === 0) return `${s}s`;
+  return s === 0 ? `${m}m` : `${m}m ${s}s`;
+}

@@ -42,13 +42,5 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(url);
   }
 
-  // Signed-in visitors have no use for the landing page — send them straight
-  // to the app's front door (spec §3).
-  if (path === "/" && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/verify";
-    return NextResponse.redirect(url);
-  }
-
   return response;
 }
