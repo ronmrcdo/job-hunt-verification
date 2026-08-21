@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.graph.nodes.url_fetch import _fetch_target
+from app.graph.nodes.url_fetch import fetch_target
 from app.graph.state import InvestigationState, Source, Finding
 
 # Mirrors app.graph.nodes.research.EXCERPT_CAP -- keep unbounded posting text
@@ -51,7 +51,7 @@ def _fetched_source(state: InvestigationState) -> Source | None:
         return None
     excerpt = text[:POSTING_EXCERPT_CAP]
     return Source(
-        id="src_det_fetched", url=_fetch_target(state.submission), kind="fetched_page",
+        id="src_det_fetched", url=fetch_target(state.submission), kind="fetched_page",
         retrieved_at=datetime.now(timezone.utc),
         content_summary=f"{FETCHED_SOURCE_PREFIX} {excerpt}",
         raw_excerpt=excerpt,
@@ -81,7 +81,7 @@ def evidence_assembly(state: InvestigationState) -> dict:
         all_sources = all_sources + [fetched_src]
     if state.fetch_failed:
         all_sources = all_sources + [Source(
-            id="src_det_fetch_failed", url=_fetch_target(state.submission), kind="user_provided",
+            id="src_det_fetch_failed", url=fetch_target(state.submission), kind="user_provided",
             retrieved_at=datetime.now(timezone.utc),
             content_summary="The submitted job link could not be retrieved.",
             raw_excerpt=None,
