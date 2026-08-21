@@ -85,3 +85,24 @@ def test_reject_trigger_on_auth_users():
 
 def test_verify_rls_has_disposable_case():
     assert "case 10" in VERIFY
+
+
+OBS = _sql("20260821123000_abuse_observability.sql")
+
+
+def test_abuse_views_created():
+    assert "create or replace view abuse_daily_spend" in OBS
+    assert "create or replace view abuse_signups_hourly" in OBS
+
+
+def test_abuse_snapshot_function():
+    assert "create or replace function abuse_snapshot()" in OBS
+    assert "today_usd" in OBS
+    assert "signups_24h" in OBS
+
+
+def test_quota_trigger_denial_log_is_the_observability_signal():
+    # The denial signal is the RAISE LOG in the Phase 1 quota trigger (a RAISE
+    # LOG survives the transaction rollback the accompanying RAISE EXCEPTION
+    # causes), so denials are observable in Postgres logs.
+    assert "raise log" in QUOTA
