@@ -532,8 +532,8 @@ declare
   denied boolean := false;
 begin
   delete from auth.users where id = u;                -- cascade clears quota row
-  insert into auth.users (id, email) values (u, 'topup@example.com');
-  perform grant_top_up(u, 2);
+  insert into auth.users (id, email) values (u, 'topup@example.com');  -- provisions balance 0
+  update user_check_quota set top_up_balance = 2 where user_id = u;    -- seed balance directly (owner bypasses RLS); grant_top_up() lands in Task E
   -- weekly exhausted: three in-window weekly rows
   insert into investigations (user_id, submission, status, created_at, quota_source) values
     (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
@@ -695,8 +695,8 @@ declare
   r record;
 begin
   delete from auth.users where id = u;
-  insert into auth.users (id, email) values (u, 'status@example.com');
-  perform grant_top_up(u, 4);
+  insert into auth.users (id, email) values (u, 'status@example.com');  -- provisions balance 0
+  update user_check_quota set top_up_balance = 4 where user_id = u;     -- seed balance directly; grant_top_up() lands in Task E
   insert into investigations (user_id, submission, status, created_at, quota_source) values
     (u, '{"job_text":"x"}', 'done', now(), 'weekly'),
     (u, '{"job_text":"x"}', 'done', now(), 'weekly');
@@ -914,9 +914,7 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 
 **Interfaces:**
 - Consumes: `user_check_quota` (Task B).
-- Produces: `grant_top_up(target_user uuid, n int) returns int` (SECURITY DEFINER, `service_role` only) — atomic add-to-balance; the `>= 0` check floors claw-backs. Already used by Cases 14/15; this task lands the function and its own tests + docs.
-
-> Note: Cases 14 and 15 call `grant_top_up()`. If executing strictly task-by-task, those cases only pass once this migration is applied. Either land Task E's migration before re-running the Task C/D behavioral checks, or (simpler) run the full `verify_rls.sql` once at the end — every case is idempotent and self-cleaning.
+- Produces: `grant_top_up(target_user uuid, n int) returns int` (SECURITY DEFINER, `service_role` only) — atomic add-to-balance; the `>= 0` check floors claw-backs. Exercised by Case 16 (this task); Cases 14/15 seed balances directly, so this function has no earlier dependency.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1089,4 +1087,6 @@ Claude-Session: https://claude.ai/code/session_01S59Fmci1gdtQJM7hQo6S12"
 
 **3. Type consistency:** `QuotaStatus` fields (`weeklyUsed`, `weeklyLimit`, `resetsAt`, `topUpBalance`) match between `investigations.ts` (Task D Step 9), its test (Step 7), and `NewCheckForm.tsx` (Step 13). RPC columns (`weekly_used`, `weekly_limit`, `resets_at`, `top_up_balance`) match between the migration (Task D Step 3), the DB test (Step 1), Case 15 (Step 5), and the lib mapping (Step 9). `grant_top_up(uuid, int)` signature matches between migration (Task E Step 3), tests (Step 1), and Cases 14/15/16.
 
-**Cross-task dependency note:** `grant_top_up()` (Task E) is used by Cases 14 & 15 (Tasks C & D). Executors running strictly per-task should run the complete `verify_rls.sql` once after Task E (all cases idempotent/self-cleaning), or apply Task E's migration before re-verifying C/D — called out in Task E's intro note.
+**Cross-task dependency note:** none. `grant_top_up()` (Task E) is exercised only by its own Case 16; Cases 14 & 15 seed balances with a direct `update user_check_quota` (owner bypasses RLS), so every task's behavioral run is self-contained.
+
+**Environment note (execution):** the `supabase` CLI and `psql` are not on PATH; only the running containers are. Behavioral steps run migrations and `verify_rls.sql` via `docker exec -i supabase_db_job-hunt-verification psql -U postgres -d postgres`. Migration text tests run with `cd apps/api && uv run pytest …`; web tests with `cd apps/web && pnpm test -- …`.
