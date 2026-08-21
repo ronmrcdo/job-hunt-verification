@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from app.graph.state import InvestigationState, Source
+from app.graph.nodes.url_fetch import _fetch_target
+from app.graph.state import InvestigationState, Source, Finding
 
 # Mirrors app.graph.nodes.research.EXCERPT_CAP -- keep unbounded posting text
 # out of graph state, same as every other Source.
@@ -37,6 +38,26 @@ def _posting_source(state: InvestigationState) -> Source | None:
     )
 
 
+FETCHED_SOURCE_PREFIX = "Fetched job posting page:"
+
+
+def _fetched_source(state: InvestigationState) -> Source | None:
+    """The page fetched from a submitted link (url_fetch node), as a canonical
+    citable Source so it flows into injection scanning and analysis exactly
+    like the pasted posting. Untrusted, attacker-influenced content (spec
+    §9.2): kind='fetched_page', treated as data everywhere downstream."""
+    text = state.fetched_posting
+    if not text:
+        return None
+    excerpt = text[:POSTING_EXCERPT_CAP]
+    return Source(
+        id="src_det_fetched", url=_fetch_target(state.submission), kind="fetched_page",
+        retrieved_at=datetime.now(timezone.utc),
+        content_summary=f"{FETCHED_SOURCE_PREFIX} {excerpt}",
+        raw_excerpt=excerpt,
+    )
+
+
 def evidence_assembly(state: InvestigationState) -> dict:
     """Consolidates the fan-out branches' accumulated raw_sources/raw_findings
     (additive-reducer channels, so concurrent branch writes don't conflict)
@@ -54,6 +75,17 @@ def evidence_assembly(state: InvestigationState) -> dict:
     posting_src = _posting_source(state)
     if posting_src is not None:
         all_sources = all_sources + [posting_src]
+
+    fetched_src = _fetched_source(state)
+    if fetched_src is not None:
+        all_sources = all_sources + [fetched_src]
+    if state.fetch_failed:
+        all_sources = all_sources + [Source(
+            id="src_det_fetch_failed", url=_fetch_target(state.submission), kind="user_provided",
+            retrieved_at=datetime.now(timezone.utc),
+            content_summary="The submitted job link could not be retrieved.",
+            raw_excerpt=None,
+        )]
 
     for src in all_sources:
         if src.id.startswith("src_det_"):        # already canonical deterministic source
@@ -80,4 +112,10 @@ def evidence_assembly(state: InvestigationState) -> dict:
                 seen.add(i); ordered.append(i)
         remapped_findings.append(f.model_copy(update={"source_ids": ordered}))
 
+    if state.fetch_failed:
+        remapped_findings.append(Finding(
+            id="fetch_failed", category="job", direction="unverifiable", severity="info",
+            claim="We could not retrieve the linked job posting, so its contents were not "
+                  "examined — treat as unverifiable, not evidence.",
+            source_ids=["src_det_fetch_failed"], provenance="deterministic"))
     return {"sources": canonical_sources, "findings": remapped_findings}
