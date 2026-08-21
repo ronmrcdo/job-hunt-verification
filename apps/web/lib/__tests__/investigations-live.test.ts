@@ -3,17 +3,22 @@ import { applyStepEvent, applyStatusEvent, isTerminal, useInvestigationLive } fr
 import type { InvestigationStep, Investigation } from "../investigations";
 import { renderHook } from "@testing-library/react";
 
-const { getInvestigation, mockChannel, removeChannel } = vi.hoisted(() => {
+const { getInvestigation, mockChannel, removeChannel, setAuth, getSession, order } = vi.hoisted(() => {
   const getInv = vi.fn();
+  const ordr: string[] = [];
   const mockChan = {
     on: vi.fn(function (this: any) { return this; }),
     subscribe: vi.fn(function (this: any, cb: (status: string) => void) {
+      ordr.push("subscribe");
       cb("SUBSCRIBED");
       return this;
     }),
   };
+  const setAuthFn = vi.fn(async () => { ordr.push("setAuth"); });
+  const getSessionFn = vi.fn(async () => ({ data: { session: { access_token: "jwt-abc" } } }));
   const removeChann = vi.fn();
-  return { getInvestigation: getInv, mockChannel: mockChan, removeChannel: removeChann };
+  return { getInvestigation: getInv, mockChannel: mockChan, removeChannel: removeChann,
+           setAuth: setAuthFn, getSession: getSessionFn, order: ordr };
 });
 
 const step = (k: string, order: number, status: string): InvestigationStep => ({
@@ -30,6 +35,8 @@ vi.mock("../supabase/client", () => ({
   createClient: () => ({
     channel: vi.fn(() => mockChannel),
     removeChannel,
+    auth: { getSession },
+    realtime: { setAuth },
   }),
 }));
 
@@ -39,6 +46,7 @@ vi.mock("../investigations", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  order.length = 0;
   getInvestigation.mockResolvedValue({
     investigation: { id: "i1", status: "running" },
     steps: [],
@@ -79,6 +87,20 @@ describe("useInvestigationLive", () => {
     // Give the effect time to run and the subscription callback to be invoked
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(getInvestigation).toHaveBeenCalled();
+  });
+
+  it("authenticates the realtime socket with the user JWT BEFORE subscribing", async () => {
+    // Realtime postgres_changes is RLS-gated to `authenticated`; if the socket
+    // joins before its token is set, every step/status event is dropped and the
+    // UI only updates on manual refresh. setAuth(token) must precede subscribe.
+    const initial = {
+      investigation: { id: "i1", status: "running" } as Investigation,
+      steps: [] as InvestigationStep[],
+    };
+    renderHook(() => useInvestigationLive("i1", initial));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(setAuth).toHaveBeenCalledWith("jwt-abc");
+    expect(order).toEqual(["setAuth", "subscribe"]);
   });
 });
 

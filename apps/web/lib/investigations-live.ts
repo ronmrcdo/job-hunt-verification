@@ -43,49 +43,73 @@ export function useInvestigationLive(
   useEffect(() => {
     if (isTerminal(investigation.status)) return;
     const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
     async function reselect() {
       const fresh = await getInvestigation(supabase, id);
-      if (fresh) {
+      if (fresh && !cancelled) {
         setInvestigation(fresh.investigation);
         setSteps(fresh.steps);
       }
     }
 
-    const channel = supabase
-      .channel(`investigation:${id}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "investigation_steps", filter: `investigation_id=eq.${id}` },
-        (payload) => setSteps((prev) => applyStepEvent(prev, payload.new as InvestigationStep)),
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "investigation_steps", filter: `investigation_id=eq.${id}` },
-        (payload) => setSteps((prev) => applyStepEvent(prev, payload.new as InvestigationStep)),
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "investigations", filter: `id=eq.${id}` },
-        (payload) => {
-          const row = payload.new as Investigation;
-          setInvestigation((prev) => applyStatusEvent(prev, row));
-          if (isTerminal(row.status)) {
-            supabase.removeChannel(channel);
-            void reselect();
-          }
-        },
-      )
-      .subscribe((status) => {
-        // Close the SELECT→subscribe gap: re-read once the channel is live so
-        // any step transition during subscription setup is not lost (review Minor #3).
-        if (status === "SUBSCRIBED") void reselect();
-        // CHANNEL_ERROR / TIMED_OUT → degrade to a one-shot re-SELECT (spec §7.5).
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") void reselect();
-      });
+    async function start() {
+      // Realtime postgres_changes enforces RLS against the *subscriber's* JWT,
+      // and our step/status policies are `to authenticated`. The @supabase/ssr
+      // browser client hydrates its session from cookies asynchronously, so a
+      // synchronous .subscribe() joins the socket unauthenticated and every
+      // event is silently dropped by RLS — the page then only ever updates on a
+      // manual refresh (which is separately cookie-authed server-side). Set the
+      // socket's token BEFORE subscribing to close that gap (spec §7.4).
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      const token = data.session?.access_token;
+      if (token) await supabase.realtime.setAuth(token);
+      if (cancelled) return;
+
+      channel = supabase
+        .channel(`investigation:${id}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "investigation_steps", filter: `investigation_id=eq.${id}` },
+          (payload) => {
+            setSteps((prev) => applyStepEvent(prev, payload.new as InvestigationStep));
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "investigation_steps", filter: `investigation_id=eq.${id}` },
+          (payload) => {
+            setSteps((prev) => applyStepEvent(prev, payload.new as InvestigationStep));
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "investigations", filter: `id=eq.${id}` },
+          (payload) => {
+            const row = payload.new as Investigation;
+            setInvestigation((prev) => applyStatusEvent(prev, row));
+            if (isTerminal(row.status)) {
+              if (channel) supabase.removeChannel(channel);
+              void reselect();
+            }
+          },
+        )
+        .subscribe((status) => {
+          // Close the SELECT→subscribe gap: re-read once the channel is live so
+          // any step transition during subscription setup is not lost (review Minor #3).
+          if (status === "SUBSCRIBED") void reselect();
+          // CHANNEL_ERROR / TIMED_OUT → degrade to a one-shot re-SELECT (spec §7.5).
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") void reselect();
+        });
+    }
+
+    void start();
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
     };
     // Re-run only when the id or terminal-ness changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
