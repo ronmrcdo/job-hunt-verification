@@ -51,10 +51,12 @@ export function TextField({
         onChange={(event) => onChange(event.target.value)}
         className={[
           // mt-2 keeps the focus ring (outline + 2px offset) from overlapping
-          // the label sitting directly above.
-          "mt-2 w-full rounded-none border p-[13px] transition-colors duration-150",
+          // the label sitting directly above. 14px/11px padding matches the
+          // prototype's ~44px field height — the default 16px body size read
+          // oversized against the handoff.
+          "mt-2 w-full rounded-none border px-[13px] py-[11px] text-[14px] transition-colors duration-150",
           invalid ? "border-critical" : "border-ink",
-          mono ? "font-mono text-[14px] leading-[1.6]" : "",
+          mono ? "font-mono leading-[1.6]" : "leading-[1.5]",
         ]
           .filter(Boolean)
           .join(" ")}

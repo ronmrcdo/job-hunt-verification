@@ -34,21 +34,25 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
   wide: "text-[14px] font-bold tracking-[0.1em] px-[19px] py-[15px] uppercase",
 };
 
-export function Button({
+/**
+ * The button's visual contract, extracted so a *link* that must read as a
+ * button (e.g. "GO TO HOME" on an error screen — real navigation, so a real
+ * anchor) shares one source of truth with <Button> instead of restating it.
+ */
+export function buttonClasses({
   variant = "primary",
   size = "md",
-  type = "button",
-  pending = false,
-  pendingLabel,
+  isDisabled = false,
   confirmed = false,
-  disabled,
   className,
-  children,
-  ...props
-}: ButtonProps) {
-  const isDisabled = disabled || pending;
-
-  const classes = [
+}: {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  isDisabled?: boolean;
+  confirmed?: boolean;
+  className?: string;
+} = {}) {
+  return [
     // Colour/hover transition on its own clock; the press scale uses the
     // shared strong ease-out. `active:scale` is suppressed once the button is
     // non-pressable so a dead/done button never feels pressable. A `confirmed`
@@ -69,6 +73,23 @@ export function Button({
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+export function Button({
+  variant = "primary",
+  size = "md",
+  type = "button",
+  pending = false,
+  pendingLabel,
+  confirmed = false,
+  disabled,
+  className,
+  children,
+  ...props
+}: ButtonProps) {
+  const isDisabled = disabled || pending;
+
+  const classes = buttonClasses({ variant, size, isDisabled, confirmed, className });
 
   // Stable hook for the CSS target + a lightweight structural contract
   // that this affordance exists — mirrors the max-[430px]:w-full class
