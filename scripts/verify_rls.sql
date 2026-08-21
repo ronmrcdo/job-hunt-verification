@@ -390,4 +390,39 @@ exception when others then
   raise exception 'Case 12 FAIL: service_role could not read abuse views/snapshot (%: %)', sqlstate, sqlerrm;
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 13: signup provisioning (spec §4.7). With default_top_up_balance set
+-- to 5, a new auth.users row must get a user_check_quota row seeded to 5, and
+-- an authenticated client cannot UPDATE its own balance (definer-only writes).
+-- -----------------------------------------------------------------------
+do $$
+declare
+  u uuid := '00000000-0000-0000-0000-0000000000d3';
+  bal int;
+  denied boolean := false;
+begin
+  update app_settings set value = '5' where key = 'default_top_up_balance';
+  delete from auth.users where id = u;               -- cascade clears quota row
+  insert into auth.users (id, email) values (u, 'newuser@example.com');
+  select top_up_balance into bal from user_check_quota where user_id = u;
+  if bal is distinct from 5 then
+    raise exception 'Case 13 FAIL: provisioned balance % (expected 5)', bal;
+  end if;
+
+  -- client cannot write its own balance
+  perform set_config('request.jwt.claims', json_build_object('sub', u)::text, true);
+  set local role authenticated;
+  begin
+    update user_check_quota set top_up_balance = 999 where user_id = u;
+    if not found then denied := true; end if;         -- RLS: 0 rows updated
+  exception when sqlstate '42501' then denied := true;
+  end;
+  reset role;
+  if not denied then raise exception 'Case 13 FAIL: client updated its own balance'; end if;
+
+  update app_settings set value = '0' where key = 'default_top_up_balance';
+  delete from auth.users where id = u;
+  raise notice 'Case 13 PASS';
+end $$;
+
 rollback;
