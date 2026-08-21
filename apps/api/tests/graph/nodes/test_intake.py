@@ -79,3 +79,84 @@ async def test_intake_carries_recruiter_name_and_channel(monkeypatch):
     ent = (await intake.intake_extraction(state))["entities"]
     assert ent.recruiter_name == "John Smith"
     assert ent.contact_channel == "Telegram"
+
+@pytest.mark.asyncio
+async def test_intake_rejects_job_board_as_company_domain(monkeypatch):
+    # A posting read off LinkedIn/Indeed makes the LLM emit the board's host as
+    # `company_domain`. Scoring domain age / MX / email-match against the board
+    # measures LinkedIn, not the employer -- so the board host is dropped.
+    async def fake_call(model, schema, messages, *, node):
+        return ExtractedEntities(company_name="Acme", company_domain="www.linkedin.com"), \
+            NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(
+        job_text="Acme is hiring an Engineer", company_name="Acme",
+        recruiter_email="jo@acme-hiring.xyz"))
+    out = await intake.intake_extraction(state)
+    ent = out["entities"]
+    assert ent.company_domain == "acme-hiring.xyz"
+    assert ent.company_name == "Acme"
+
+@pytest.mark.asyncio
+async def test_intake_drops_ats_recruiter_domain_as_company_domain(monkeypatch):
+    # The recruiter-email fallback has the same hazard: an ATS-hosted sender is
+    # not the employer's domain either, and must leave company_domain unset
+    # rather than pointing the deterministic checks at greenhouse.io.
+    async def fake_call(model, schema, messages, *, node):
+        return ExtractedEntities(company_name="Acme"), NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(
+        job_text="Acme is hiring an Engineer", company_name="Acme",
+        recruiter_email="no-reply@boards.greenhouse.io"))
+    out = await intake.intake_extraction(state)
+    assert out["entities"].company_domain is None
+
+@pytest.mark.asyncio
+async def test_intake_keeps_a_real_employer_domain(monkeypatch):
+    async def fake_call(model, schema, messages, *, node):
+        return ExtractedEntities(company_name="Acme", company_domain="acme.com"), \
+            NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(
+        job_text="Acme is hiring", company_name="Acme", recruiter_email="jo@acme.com"))
+    out = await intake.intake_extraction(state)
+    assert out["entities"].company_domain == "acme.com"
+
+@pytest.mark.asyncio
+async def test_intake_rejects_job_board_as_candidate_real_domain(monkeypatch):
+    # candidate_real_domain is the *reference* the homoglyph check measures
+    # against. A board host is never the company's official domain, and using
+    # one as the reference fabricates lookalike hits: the legitimate employer
+    # "indeedhq.com" sits 2 edits from "indeed.com", which the homoglyph check
+    # reads as a CRITICAL-grade impersonation of Indeed.
+    from app.checks.homoglyph import homoglyph_hit
+
+    async def fake_call(model, schema, messages, *, node):
+        return ExtractedEntities(company_name="IndeedHQ", company_domain="indeedhq.com",
+                                 candidate_real_domain="www.indeed.com"), \
+            NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(
+        job_text="IndeedHQ is hiring an Engineer", company_name="IndeedHQ",
+        recruiter_email="jo@indeedhq.com"))
+    ent = (await intake.intake_extraction(state))["entities"]
+
+    assert ent.candidate_real_domain is None
+    assert homoglyph_hit(ent.company_domain, ent.candidate_real_domain) is False
+
+@pytest.mark.asyncio
+async def test_intake_keeps_a_real_candidate_real_domain(monkeypatch):
+    async def fake_call(model, schema, messages, *, node):
+        return ExtractedEntities(company_name="Acme", company_domain="acrne.com",
+                                 candidate_real_domain="Acme.com"), \
+            NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(
+        job_text="Acme is hiring", company_name="Acme", recruiter_email="jo@acrne.com"))
+    ent = (await intake.intake_extraction(state))["entities"]
+    assert ent.candidate_real_domain == "acme.com"

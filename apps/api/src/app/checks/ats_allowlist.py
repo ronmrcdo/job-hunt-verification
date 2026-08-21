@@ -3,6 +3,7 @@
 Job postings hosted on a known ATS domain (Greenhouse, Lever, Workday, ...)
 are a legitimizing signal per spec §7.
 """
+from app.checks.domain_match import matches_any
 
 ATS_DOMAINS: frozenset[str] = frozenset({
     "greenhouse.io", "lever.co", "myworkday.com", "workday.com",
@@ -11,10 +12,5 @@ ATS_DOMAINS: frozenset[str] = frozenset({
 })
 
 
-def _registrable_suffix_match(domain: str, ats: str) -> bool:
-    d = domain.lower().rstrip(".")
-    return d == ats or d.endswith("." + ats)
-
-
 def is_ats_domain(domain: str) -> bool:
-    return any(_registrable_suffix_match(domain, a) for a in ATS_DOMAINS)
+    return matches_any(domain, ATS_DOMAINS)
