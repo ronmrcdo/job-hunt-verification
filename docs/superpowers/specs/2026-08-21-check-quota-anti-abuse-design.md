@@ -2,6 +2,10 @@
 
 **Date:** 2026-08-21
 **Status:** Draft for review
+**Amended:** 2026-08-21 — weekly window (7d, was rolling 14d), a **non-refreshing
+per-account top-up balance** in addition to the weekly allowance, and a runtime
+**`app_settings` table** as the config home (replacing the `app.settings.*` GUCs
+for the quota knobs). See §4.1, §4.2, §4.7, §5, §7–§9.
 **Related:**
 - `docs/superpowers/specs/2026-08-19-v1-background-inngest-supabase-design.md` (worker, schema, RLS)
 - `docs/superpowers/specs/2026-08-19-v1-web-supabase-integration-design.md` (auth, direct-insert flow)
@@ -9,15 +13,27 @@
 ## 1. Goal
 
 Make the checker free but abuse-resistant: **every authenticated user gets 3
-checks per rolling 14-day window**, and no bot — single account or account
-farm — can turn the checker into a money pump.
+checks per rolling 7-day window** (the recurring free allowance), **plus an
+optional per-account top-up balance of extra checks that never refreshes** (a
+persistent grant, consumed only after the weekly allowance is spent), and no
+bot — single account or account farm — can turn the checker into a money pump.
+
+The weekly allowance is **use-it-or-lose-it**: it does not accumulate across
+weeks (a rolling window ages each use out exactly 7 days later; unused capacity
+never stacks past the limit). The top-up balance is the opposite — it is a
+one-time grant that sits untouched until the weekly allowance runs out, and what
+is left carries forward indefinitely until spent.
 
 ### Non-goals
 - No anonymous tier. Search is already auth-gated (Supabase Auth); `user =
   auth.uid()`. This spec does not add anonymous access.
-- No paid tier. 3 / 14 days is a hard ceiling for every account. A future
-  paid/unlimited tier is out of scope but the limit is data-driven so it can
-  be raised per-account later without a schema change.
+- No paid/billing tier. The weekly 3 is the hard *recurring* ceiling; the
+  top-up balance is a manually granted (admin/service-role) allotment, not a
+  purchase flow. A monetized purchase path is out of scope, but the top-up
+  balance is the seam a future one would credit into — no schema change needed.
+- No self-serve top-up. Balances are granted by an operator (`grant_top_up()`,
+  §4.7) or seeded for new accounts via `default_top_up_balance`; users cannot
+  grant themselves credits.
 - No CAPTCHA/Turnstile. Because there is no anonymous entry point, the
   signup gate (email confirmation) plus the quota carry the anti-bot load.
 
@@ -60,72 +76,128 @@ lives in the **worker** (the only component that knows a run's cost). So:
 
 ## 4. Components
 
-### 4.1 Per-user rolling quota — `enforce_check_quota()` trigger
+### 4.1 Two-bucket quota — `enforce_check_quota()` trigger
 
-A `BEFORE INSERT` trigger function on `investigations`, added in a new
-migration. Runs after RLS `with check` passes and alongside the existing
-`before insert` triggers (trigger fire order is alpha by name; quota only
-*reads* a count, so order versus `force_investigation_defaults` is
-immaterial).
+A `BEFORE INSERT` trigger function on `investigations`, replacing the
+rolling-window-only version (`CREATE OR REPLACE` in a new migration). Runs
+after RLS `with check` passes and alongside the existing `before insert`
+triggers (fire order is alpha by name; the quota reads a count and writes the
+caller's own `user_check_quota` row, so order versus `force_investigation_
+defaults` is immaterial).
+
+Two buckets are charged in a fixed order — **weekly allowance first, top-up
+balance second** — and the check is **stamped with the bucket it drew from**
+(`NEW.quota_source ∈ {'weekly','top_up'}`) so the read side (§4.2) and future
+rounds can tell weekly usage apart from top-up usage. Without the stamp, a
+top-up-funded row would be indistinguishable from a weekly one in the rolling
+count, and the two buckets could not coexist.
 
 Logic:
 ```
-limit  := coalesce(current_setting('app.settings.check_quota_limit', true)::int, 3)
-window := coalesce(current_setting('app.settings.check_quota_window_days', true)::int, 14)
-used   := count(*) from investigations
-          where user_id = auth.uid()
-            and created_at > now() - (window || ' days')::interval
-if used >= limit:
-    resets_at := (min(created_at) of those rows) + window days
-    RAISE LOG  'check_quota_denied user=% used=% limit=%', auth.uid(), used, limit
-    RAISE sqlstate 'PT429'
-      using message = 'check_quota_exceeded',
-            hint    = to_char(resets_at, 'YYYY-MM-DD"T"HH24:MI:SSZ')
+if auth.uid() is null: return NEW                       -- service/worker, unmetered (see below)
+lim := app_setting('check_quota_limit', '3')::int       -- §4.7 settings table, with code default
+win := app_setting('check_quota_window_days', '7')::int
+
+weekly_used := count(*) from investigations
+               where user_id = auth.uid()
+                 and quota_source = 'weekly'
+                 and created_at > now() - (win || ' days')::interval
+
+if weekly_used < lim:
+    NEW.quota_source := 'weekly'
+    return NEW
+
+-- weekly allowance spent → fall through to the permanent balance
+select top_up_balance into bal
+  from user_check_quota where user_id = auth.uid() for update   -- row-lock: no double-spend across concurrent inserts
+if bal > 0:
+    update user_check_quota
+       set top_up_balance = top_up_balance - 1, updated_at = now()
+     where user_id = auth.uid()
+    NEW.quota_source := 'top_up'
+    return NEW
+
+-- both buckets exhausted
+resets_at := (min(created_at) of the in-window 'weekly' rows) + win days
+RAISE LOG  'check_quota_denied user=% weekly_used=% limit=% top_up=%', auth.uid(), weekly_used, lim, bal
+RAISE sqlstate 'PT429'
+  using message = 'check_quota_exceeded',
+        hint    = to_char(resets_at, 'YYYY-MM-DD"T"HH24:MI:SSZ')
 ```
 
 Design decisions:
-- **Rolling 14-day window**, not a calendar reset. It needs no cron, ages
-  out naturally, and cannot be gamed at a boundary (a fixed date lets a user
-  burn 3 at 23:59 and 3 more at 00:01). The concrete reset moment shown to
-  the user is `oldest-in-window + 14 days`.
+- **Rolling 7-day window** for the weekly bucket, not a calendar reset. It
+  needs no cron, ages out naturally (each use frees its slot exactly 7 days
+  later), and cannot be gamed at a boundary (a fixed date lets a user burn 3
+  at 23:59 and 3 more at 00:01). The reset moment shown to the user is
+  `oldest-in-window 'weekly' row + 7 days` — i.e. when the next *weekly* slot
+  frees. The **top-up balance never refreshes**, so it contributes nothing to
+  `resets_at`.
+- **Weekly-first charge order.** The recurring allowance is use-it-or-lose-it,
+  so spending it before the permanent balance wastes the least — the granted
+  top-up is preserved as long as possible.
+- **`quota_source` stamps every metered insert.** Weekly-used counts only
+  `quota_source='weekly'` rows; top-up spend is tracked by the balance
+  counter, not by counting rows. Service/worker rows stay `NULL` (unmetered).
+- **`SECURITY DEFINER`.** The trigger now *writes* `user_check_quota`
+  (decrementing the balance), which is RLS-protected against client writes, so
+  the function runs as its owner with a pinned `search_path`. It still keys all
+  reads/writes off `auth.uid()` (the JWT claim resolves under a definer
+  context), so a user can only ever spend their own balance.
+- **`FOR UPDATE` on the balance row** prevents two concurrent inserts from the
+  same user both reading `bal=1` and both succeeding (double-spend). The lock
+  is held only for the row being decremented.
 - **Every submission counts**, regardless of terminal status. Every insert
   triggers the pipeline, so counting only successes would let crafted-to-fail
-  inputs run free. Operators refund by deleting a row (service role bypasses
-  RLS and this trigger).
-- **Limit/window are `current_setting('app.settings.*')`** with defaults 3/14
-  — same operator-config pattern the webhook trigger already uses in
-  `20260819073420_investigations_v1.sql`. Bump the limit with `alter database
-  … set app.settings.check_quota_limit = '…'`, no deploy.
+  inputs run free. Operators refund a weekly slot by deleting the row (service
+  role bypasses RLS and this trigger) and/or re-crediting via `grant_top_up()`.
+- **Limit/window come from the `app_settings` table** (§4.7) via the
+  `app_setting(key, default)` helper, with code defaults `3`/`7` so an unseeded
+  environment still works. Change them with a single `UPDATE app_settings …`,
+  no deploy and no `alter database`.
 - **`PT429`**: PostgREST maps a `PTxyz` SQLSTATE to HTTP status `xyz`, so the
   client receives **HTTP 429** with `{code:"PT429", message:"check_quota_
   exceeded", hint:<resets_at>}`. The client matches on `message`, so UX does
   not hard-depend on the status; the 429 is verified by test (§8).
 - **Service role / worker inserts bypass** — the worker connects as the DB
-  owner / service role, which bypasses RLS *and* triggers are still fired but
-  `auth.uid()` is null for a service connection; the count for a null user is
-  irrelevant because the worker never inserts into `investigations` (it only
-  updates). No carve-out needed, but the trigger guards `if auth.uid() is
-  null then return new` to be explicit and future-proof.
+  owner / service role; `auth.uid()` is null for a service connection, so the
+  `auth.uid() is null` guard returns early and the row is left unmetered
+  (`quota_source` NULL). The worker only ever *updates* `investigations`, never
+  inserts, so this is a future-proofing guard rather than a live path.
 
 ### 4.2 Quota status — `quota_status()` RPC + client UX
 
 A `SECURITY DEFINER` SQL function, `grant execute … to authenticated`,
-returning the caller's window state so the UI never has to reverse-engineer
-it from a raw insert error:
+returning the caller's full quota state — both buckets — so the UI never has to
+reverse-engineer it from a raw insert error. **The return shape changes** (adds
+`top_up_balance`, renames `used`/`limit` to `weekly_*` for clarity), so the web
+consumers in §4.2 update in lockstep:
 ```
-quota_status() -> table(used int, "limit" int, resets_at timestamptz)
+quota_status() -> table(
+  weekly_used     int,          -- count of in-window quota_source='weekly' rows
+  weekly_limit    int,          -- app_setting('check_quota_limit','3')
+  resets_at       timestamptz,  -- oldest in-window 'weekly' row + window; null when weekly_used = 0
+  top_up_balance  int           -- user_check_quota.top_up_balance, 0 if no row
+)
 ```
-`used`/`limit` computed exactly as §4.1; `resets_at` is `min(created_at)+window`
-over in-window rows (null when `used = 0`).
+`weekly_used`/`weekly_limit`/`resets_at` mirror §4.1 exactly (same
+`quota_source='weekly'` filter and settings); `top_up_balance` is a
+`left join user_check_quota` coalesced to 0. Reads only the caller's rows via
+`auth.uid()`.
 
-Web (`/verify`):
-- On load, call `quota_status()`; render "**N of 3 checks left · resets
-  <date>**".
-- When `used >= limit`, **disable the submit button** and show the reset
-  copy, so the wall is a UI state, not a raw DB error.
+Web (`/verify`), all in `apps/web/lib/investigations.ts::quotaStatus()` +
+`NewCheckForm.tsx`:
+- Update the `QuotaStatus` type and the RPC mapping to the new columns
+  (`weeklyUsed`, `weeklyLimit`, `resetsAt`, `topUpBalance`).
+- On load, render "**N of 3 weekly checks left · resets <date>**", and, when
+  `top_up_balance > 0`, an additional "**+M bonus checks**".
+- **Disable the submit button only when `weekly_used >= weekly_limit` AND
+  `top_up_balance = 0`** — i.e. only when *both* buckets are empty. A user with
+  weekly exhausted but bonus remaining can still submit (it spends a bonus).
 - Still handle the insert rejection defensively: HTTP 429 or `message ===
-  'check_quota_exceeded'` → show the same reset message (covers the race where
-  a second tab spends the last slot).
+  'check_quota_exceeded'` → show the reset message (covers the race where a
+  second tab spends the last slot in either bucket). The `createInvestigation`
+  PT429 mapping is unchanged.
 
 ### 4.3 Global daily cost ceiling (worker)
 
@@ -193,9 +265,9 @@ Lightweight, operator-facing — no new service:
 ### 4.6 Rate limiting — delegated, not implemented
 
 Per-user request rate limiting on the **check** endpoint is intentionally
-**omitted**: the 3 / 14-day quota (§4.1) is a far tighter cap on the expensive
-path — even all 3 fired in one second is only 3 runs — so a velocity limit on
-top adds nothing. Rate limiting is instead handled where the quota does *not*
+**omitted**: the two-bucket quota (§4.1) is a far tighter cap on the expensive
+path — even a full weekly-plus-top-up allowance fired in one second is a small,
+bounded number of runs — so a velocity limit on top adds nothing. Rate limiting is instead handled where the quota does *not*
 meter:
 
 - **Signup / login velocity** (the account-farm vector) → **Supabase Auth's
@@ -207,23 +279,112 @@ meter:
 
 No application-level rate limiter is built as part of this work.
 
+### 4.7 Top-up balance, settings table, and granting
+
+**`user_check_quota` — the permanent balance.** One row per account:
+```
+user_check_quota(
+  user_id        uuid primary key references auth.users(id) on delete cascade,
+  top_up_balance int  not null default 0 check (top_up_balance >= 0),
+  updated_at     timestamptz not null default now()
+)
+```
+RLS on: a `select` policy `using (user_id = auth.uid())` (so `quota_status()`
+and any future client read see only the caller's balance); **no** client
+insert/update/delete policy — the balance moves only through the
+`SECURITY DEFINER` trigger (decrement, §4.1) and `grant_top_up()` (credit).
+
+**Provisioning.** An `AFTER INSERT` trigger on `auth.users`
+(`provision_user_quota()`) inserts a `user_check_quota` row with
+`top_up_balance = app_setting('default_top_up_balance','0')::int`. The migration
+**backfills** existing users with the same default. `default_top_up_balance` is
+read at *provision time*, so changing the setting affects only accounts created
+afterward — existing balances are never rewritten by a setting change (correct
+grant semantics; a retroactive grant is an explicit operator `UPDATE` /
+`grant_top_up()`, not a side effect of editing config). The §4.1 trigger also
+treats a missing row as `balance = 0`, so a provisioning gap fails safe (denies
+top-up) rather than erroring.
+
+**`app_settings` — the config home.** A key/value table read at trigger/RPC
+time, replacing the `app.settings.*` GUCs for the quota knobs:
+```
+app_settings(
+  key        text primary key,
+  value      text not null,
+  updated_at timestamptz not null default now()
+)
+-- seeded rows:
+--   check_quota_limit        = '3'
+--   check_quota_window_days  = '7'
+--   default_top_up_balance   = '0'
+
+app_setting(k text, d text) returns text          -- SECURITY DEFINER, STABLE
+  := coalesce((select value from app_settings where key = k), d)
+```
+RLS on with no client policy; the definer functions read it, `service_role`
+writes it. Operators tune the whole system from one place —
+`update app_settings set value = '5' where key = 'check_quota_limit'` — with no
+deploy and no `alter database`. Code-level defaults in every `app_setting(k, d)`
+call mean an unseeded/empty table still works.
+
+> **Why a table, not `.env`.** Enforcement runs *inside Postgres* (the trigger),
+> which cannot read the web app's `.env`. The DB needs a DB-readable source of
+> truth; `app_settings` is it, and it doubles as the single settings home the
+> product wanted ("multiple settings for the whole app"). Seeding the table from
+> environment at deploy time is an optional ops convenience (a one-line
+> idempotent `insert … on conflict do update`), not a second source of truth —
+> out of scope here.
+
+**Granting top-ups.** A `SECURITY DEFINER` RPC, executable by `service_role`
+only (revoked from `authenticated`/`public`), so credits can be added
+atomically without a raw table write:
+```
+grant_top_up(target_user uuid, n int) returns int   -- new balance
+  := insert into user_check_quota (user_id, top_up_balance) values (target_user, n)
+     on conflict (user_id) do update
+       set top_up_balance = user_check_quota.top_up_balance + excluded.top_up_balance,
+           updated_at = now()
+     returning top_up_balance
+```
+`n` may be negative to claw back (the `check (top_up_balance >= 0)` constraint
+floors it — a claw-back below zero raises rather than going negative). This is
+the seam a future purchase/billing flow credits into.
+
 ## 5. Data model changes
 
-All additive; one new migration file
-`supabase/migrations/2026082110XXXX_check_quota_anti_abuse.sql` (+ a seed
-migration for blocked domains):
+The original quota/anti-abuse migrations (`20260821120000`–`20260821123000`)
+have **already shipped**. This amendment lands as **new, appended migrations**
+(the applied files are immutable), using `CREATE OR REPLACE` for the two
+functions and additive `ALTER`/`CREATE` for the rest. All changes are additive
+or in-place replacements; nothing is dropped.
 
-- `investigations`: **no column change** — index `create index if not exists
-  investigations_user_created_idx on investigations (user_id, created_at)` to
-  keep the per-user window count and daily-spend scan cheap.
-- `enforce_check_quota()` + `before insert` trigger on `investigations`.
-- `quota_status()` + grant.
-- `blocked_email_domains (domain text primary key)` + seed + `reject_
-  disposable_email()` + `before insert` trigger on `auth.users`.
-- Views `abuse_daily_spend`, `abuse_signups_hourly`; `abuse_snapshot()`.
-- Operator settings: `app.settings.check_quota_limit` (default 3),
-  `app.settings.check_quota_window_days` (default 14) — documented in
-  `scripts/RUNBOOK.md`; trigger has code defaults so an unset env still works.
+New objects (timestamped after the existing quota migrations, e.g.
+`20260821130000_weekly_quota_topup.sql`):
+
+- `app_settings(key text pk, value text not null, updated_at)` + seed rows
+  (`check_quota_limit='3'`, `check_quota_window_days='7'`,
+  `default_top_up_balance='0'`) + `app_setting(k, d)` helper (§4.7). RLS on,
+  no client policy.
+- `user_check_quota(user_id uuid pk → auth.users on delete cascade,
+  top_up_balance int not null default 0 check (>=0), updated_at)` + RLS
+  (`select` own only) (§4.7).
+- `investigations`: **add** `quota_source text check (quota_source in
+  ('weekly','top_up'))` (nullable; NULL = unmetered service row). The existing
+  `investigations_user_created_idx (user_id, created_at)` stays; the weekly
+  count additionally filters `quota_source='weekly'` — covered by that index
+  (the extra predicate is a cheap filter over the already-narrow per-user slice;
+  a partial/extended index is unnecessary at this volume).
+- `enforce_check_quota()` — `CREATE OR REPLACE`, now two-bucket + `SECURITY
+  DEFINER` (§4.1). Existing `before insert` trigger binding is reused.
+- `quota_status()` — `CREATE OR REPLACE` with the new 4-column shape (§4.2).
+- `provision_user_quota()` + `after insert` trigger on `auth.users`, plus a
+  one-time backfill of existing users (§4.7).
+- `grant_top_up(target_user uuid, n int)` `SECURITY DEFINER`, `service_role`
+  only (§4.7).
+- **Unchanged** from the shipped migrations: `blocked_email_domains` + seed +
+  `reject_disposable_email()`; the `abuse_*` views + `abuse_snapshot()`; the
+  emit webhook and its `app.settings.emit_investigation_*` GUCs (secrets — they
+  stay GUCs, out of scope for the settings table).
 
 ## 6. Error contract
 
@@ -248,10 +409,16 @@ migration for blocked domains):
 
 - Python: `GLOBAL_DAILY_USD_CEILING` in
   `apps/api/src/app/config.py` (+ `.env.example`, `apps/api/.env.example`).
-- DB: `alter database postgres set app.settings.check_quota_limit = '3'`;
-  `… check_quota_window_days = '14'` (optional — defaults baked in).
+- DB quota knobs — now the **`app_settings` table**, not GUCs:
+  `update app_settings set value = '5' where key = 'check_quota_limit';`
+  (keys: `check_quota_limit`=3, `check_quota_window_days`=7,
+  `default_top_up_balance`=0 — all optional; code defaults baked in).
+- Granting bonus checks: `select grant_top_up('<user-uuid>', 10);` as
+  `service_role` (negative `n` claws back). Setting a nonzero
+  `default_top_up_balance` gives every *future* signup that many bonus checks.
 - Supabase dashboard: Auth → "Confirm email" **ON**; enable Google OAuth.
-- RUNBOOK: refreshing `blocked_email_domains`; reading `abuse_*` views.
+- RUNBOOK: editing `app_settings`; granting/clawing top-ups; refreshing
+  `blocked_email_domains`; reading `abuse_*` views.
 
 ## 8. Testing strategy
 
@@ -276,7 +443,37 @@ in-memory/mock persistence used in `apps/api/tests/worker/`).
   normally.
 - **Config** — `tests/test_config.py` reads `global_daily_usd_ceiling` default.
 
+**Amendment (weekly + top-up + settings table) — additional coverage:**
+- **Migration text-assertions** (`apps/api/tests/migrations/`): `app_settings`
+  table + seed + `app_setting()` helper; `user_check_quota` table + `>= 0`
+  check + RLS; `investigations.quota_source` column + check constraint;
+  `enforce_check_quota()` charges weekly-first, decrements `top_up_balance`
+  under `for update`, stamps `quota_source`, is `SECURITY DEFINER`, reads the
+  7-day window from `app_setting`; `quota_status()` returns the 4-column shape;
+  `provision_user_quota()` trigger on `auth.users` + backfill; `grant_top_up()`
+  `service_role`-only grant.
+- **Behavioral (`scripts/verify_rls.sql`)**: user with balance 2 —
+  submissions 1–3 stamp `weekly`, 4–5 stamp `top_up` and decrement balance to
+  0, 6th raises `PT429`; a `weekly` row aged past 7 days frees a weekly slot
+  (next insert stamps `weekly` again, balance untouched); `quota_status()`
+  reports `weekly_used`/`top_up_balance` correctly through that sequence;
+  `grant_top_up()` adds to the balance and a claw-back below 0 raises;
+  provisioning gives a new user `default_top_up_balance`; service-role insert
+  stays unmetered (`quota_source` NULL, balance untouched).
+- **Web (vitest)**: `NewCheckForm` renders weekly + "+M bonus" copy; submit is
+  disabled only when weekly is exhausted **and** balance is 0; enabled when
+  bonus remains; the updated `quotaStatus()` maps the 4 new columns; the
+  `check_quota_exceeded`/429 mapping still holds.
+- **Concurrency note**: the `for update` double-spend guard is asserted in
+  `verify_rls.sql` by two serialized transactions racing on a balance of 1
+  (only one succeeds); a text-assertion also pins the `for update` clause so a
+  refactor that drops it is caught.
+
 ## 9. Implementation phases (TDD; testing folded in; ≤6)
+
+> **Phases 1–5 below shipped** as migrations `20260821120000`–`20260821123000`
+> and their tests. The amendment (this revision) is delivered as the additional
+> phases in **§9a**; the original phases are retained for provenance.
 
 **Phase 1 — Per-user rolling quota (DB).**
 Red: migration text-assertion tests for `enforce_check_quota()` (window,
@@ -310,13 +507,64 @@ Red: text-assertion tests for `abuse_daily_spend`, `abuse_signups_hourly`,
 denial — fail. Green: add the views/function and the log line; verify_rls.sql
 aggregate case over seeded rows.
 
+## 9a. Amendment phases (weekly + top-up + settings table; TDD; ≤6)
+
+**Phase A — Settings table.**
+Red: migration text-assertions for `app_settings` (table, seed rows,
+`app_setting(k,d)` helper, RLS-on/no-client-policy) — fail. Green: write the
+migration; `verify_rls.sql` case reading a seeded key and a code-default
+fallback for a missing key.
+
+**Phase B — Top-up state + provisioning.**
+Red: text-assertions for `user_check_quota` (table, `>= 0` check, `select`-own
+RLS), `investigations.quota_source` column + check, `provision_user_quota()`
+`after insert` trigger on `auth.users`, and the existing-user backfill — fail.
+Green: write them; `verify_rls.sql` cases — new signup gets
+`default_top_up_balance`; backfill populated existing users; a client cannot
+update its own balance.
+
+**Phase C — Two-bucket enforcement.**
+Red: text-assertions that `enforce_check_quota()` (CREATE OR REPLACE) is
+`SECURITY DEFINER`, reads `check_quota_limit`/`check_quota_window_days` via
+`app_setting`, filters `quota_source='weekly'`, decrements `top_up_balance`
+`for update`, and stamps `quota_source`; behavioral `verify_rls.sql` for the
+weekly→top-up→`PT429` sequence, 7-day age-out, and the balance-of-1 race — fail.
+Green: rewrite the function.
+
+**Phase D — Quota status RPC + web UX.**
+Red: text-assertion for the new 4-column `quota_status()`; vitest for
+`NewCheckForm` (weekly + bonus copy, submit disabled only when both empty) and
+the updated `quotaStatus()` mapping — fail. Green: rewrite the RPC; update
+`apps/web/lib/investigations.ts` + `NewCheckForm.tsx`.
+
+**Phase E — Granting + operator docs.**
+Red: text-assertion that `grant_top_up()` exists, is `SECURITY DEFINER`, and is
+executable by `service_role` only (revoked from `authenticated`); `verify_rls.sql`
+add-then-clawback case (and a below-zero claw-back raising) — fail. Green: add
+the RPC; document `app_settings` edits, `grant_top_up()`, and
+`default_top_up_balance` in `scripts/RUNBOOK.md`.
+
 ## 10. Risks & trade-offs
 
 - **Account farming remains theoretically possible** — the signup gate raises
   cost (confirmed inbox per 3 checks) but does not eliminate it; the global
   ceiling is the hard financial stop. Accepted: matches "free tool" intent.
 - **Rolling window ≠ a friendly fixed reset date.** Mitigated by surfacing a
-  concrete `resets_at` (oldest-in-window + 14d).
+  concrete `resets_at` (oldest-in-window 'weekly' row + 7d).
+- **Top-up spend is uncapped by the weekly limit** — a large operator grant (or
+  a nonzero `default_top_up_balance` across many signups) increases exposure.
+  Bounded by the global daily cost ceiling (§4.3), which is the hard financial
+  stop regardless of how balances are granted. Grants are a deliberate operator
+  action, so this is accepted.
+- **Two writers on the balance** (trigger decrement + `grant_top_up`) — both go
+  through row-level locks / atomic `on conflict` UPDATEs, and the `>= 0` check
+  is the invariant backstop; no lost-update window.
+- **`quota_source` on historical rows is NULL** for checks inserted before this
+  migration. They therefore do not count toward the *weekly* bucket after
+  deploy — a one-time, at-most-3-per-user under-count in the first window. Rows
+  older than the 7-day window are irrelevant; the effect is negligible and
+  self-heals within a week. (A backfill of recent rows to `'weekly'` is possible
+  but not worth it.)
 - **Trigger cost on the hot insert path** — one indexed `count(*)` over a
   low-volume, quota-capped table. Negligible; the `(user_id, created_at)`
   index covers it.
