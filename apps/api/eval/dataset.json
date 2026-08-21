@@ -238,5 +238,17 @@
     "expected_max_band": "CRITICAL",
     "tags": ["payment_floor"],
     "v1_only": true
+  },
+  {
+    "id": "url_only_legit_01",
+    "description": "URL-only submission: a legit posting given as a link with no pasted text; url_fetch must retrieve it before intake can extract anything.",
+    "submission": {
+      "job_text": "",
+      "job_url": "https://acme.com/careers/be-1"
+    },
+    "expected_band": "LOW",
+    "expected_max_band": "MODERATE",
+    "tags": ["legit", "url_submission"],
+    "v1_only": true
   }
 ]

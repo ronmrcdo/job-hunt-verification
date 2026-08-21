@@ -29,6 +29,14 @@ describe("createInvestigation", () => {
     const insert = client._calls.find((c: any) => c.op === "insert");
     expect(insert.value).toMatchObject({ submission: { job_text: "x" } });
   });
+  it("normalizes a URL-only submission (no job_text) to job_text: \"\" on insert", async () => {
+    const client = fakeClient({ "investigations:single": { data: { id: "new-id" }, error: null } });
+    await createInvestigation(client, { job_url: "https://acme.co/careers/va" });
+    const insert = client._calls.find((c: any) => c.op === "insert");
+    expect(insert.value).toMatchObject({
+      submission: { job_url: "https://acme.co/careers/va", job_text: "" },
+    });
+  });
   it("returns an error message on constraint violation", async () => {
     const client = fakeClient({
       "investigations:single": { data: null, error: { message: "violates check constraint" } },
