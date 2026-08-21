@@ -10,7 +10,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata = {
-  title: "Job Hunt Verification",
+  title: "Jobverifai",
   description: "Investigation report",
 };
 
