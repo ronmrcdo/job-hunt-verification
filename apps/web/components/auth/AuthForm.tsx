@@ -156,7 +156,7 @@ export function AuthForm() {
         initial={reduce ? { opacity: 0 } : { opacity: 0, y: 10, filter: "blur(4px)" }}
         animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ duration: 0.42, ...SPRING }}
-        className="flex flex-col gap-4 border border-ink p-6"
+        className="flex flex-col gap-4 border border-ink bg-page p-6"
         role="status"
       >
         <div className="flex h-9 w-9 items-center justify-center bg-legit text-page">
@@ -206,14 +206,21 @@ export function AuthForm() {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="flex flex-col gap-4 border border-ink p-6"
+      className="flex flex-col gap-4 border border-ink bg-page p-6"
     >
+      {/* Card header row from the prototype — a quiet "SECURE" reassurance
+          balanced against the section label. */}
+      <div className="-mx-6 flex items-center justify-between border-b border-rule px-6 pb-4">
+        <MicroLabel>Sign in</MicroLabel>
+        <MicroLabel>Secure</MicroLabel>
+      </div>
+
       <div className="flex border border-ink">
         <button
           type="button"
           onClick={() => setMode("signin")}
           aria-pressed={mode === "signin"}
-          className={`flex-1 rounded-none p-[13px] text-[13px] font-bold uppercase tracking-[0.08em] transition-colors duration-150 [transition-timing-function:var(--ease-out)] ${
+          className={`flex-1 rounded-none px-[13px] py-[10px] text-[11px] font-bold uppercase tracking-[0.08em] transition-colors duration-150 [transition-timing-function:var(--ease-out)] ${
             mode === "signin" ? "bg-ink text-page" : "bg-transparent hover:bg-surface-soft"
           }`}
         >
@@ -223,7 +230,7 @@ export function AuthForm() {
           type="button"
           onClick={() => setMode("create")}
           aria-pressed={mode === "create"}
-          className={`flex-1 rounded-none p-[13px] text-[13px] font-bold uppercase tracking-[0.08em] transition-colors duration-150 [transition-timing-function:var(--ease-out)] ${
+          className={`flex-1 rounded-none px-[13px] py-[10px] text-[11px] font-bold uppercase tracking-[0.08em] transition-colors duration-150 [transition-timing-function:var(--ease-out)] ${
             mode === "create" ? "bg-ink text-page" : "bg-transparent hover:bg-surface-soft"
           }`}
         >
@@ -336,6 +343,8 @@ export function AuthForm() {
         Continue with Google
       </Button>
 
+      <hr className="m-0 border-0 border-t border-rule" />
+
       <div className="text-[13px] leading-[1.5] text-muted">
         <MicroLabel>WHY WE ASK</MicroLabel>
         <p className="mt-1">
@@ -344,7 +353,10 @@ export function AuthForm() {
         </p>
       </div>
 
-      <Link href="/" className="text-[13px] text-muted underline-offset-2 hover:underline">
+      <Link
+        href="/"
+        className="text-[10px] uppercase tracking-[0.15em] text-muted underline underline-offset-2 transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
+      >
         Back to the posting
       </Link>
     </form>

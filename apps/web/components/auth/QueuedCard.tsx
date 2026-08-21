@@ -18,11 +18,15 @@ export function QueuedCard() {
   const detection = detectInput(state.jobInput);
 
   return (
-    <div className="rounded-none border border-rule bg-surface-soft p-4">
+    <div className="max-w-[520px] rounded-none border border-rule bg-page p-4">
       <MicroLabel>What&apos;s queued</MicroLabel>
-      <p className="mt-2 whitespace-pre-wrap break-words font-mono text-[13px] leading-[1.6]">
-        {state.jobInput}
-      </p>
+      {/* Only render the posting line once there's something queued — an empty
+          jobInput would otherwise leave a blank mono line padding out the box. */}
+      {state.jobInput ? (
+        <p className="mt-2 whitespace-pre-wrap break-words font-mono text-[13px] leading-[1.6]">
+          {state.jobInput}
+        </p>
+      ) : null}
       <p className="mt-2 text-[13px] text-muted">
         {DETECTION_LABEL[detection]} · runs as soon as you&apos;re in
       </p>
