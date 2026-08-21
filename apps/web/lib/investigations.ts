@@ -111,7 +111,7 @@ export async function createInvestigation(
 ): Promise<CreateResult> {
   const { data, error } = await client
     .from("investigations")
-    .insert({ submission })
+    .insert({ submission: { ...submission, job_text: submission.job_text ?? "" } })
     .select("id")
     .single();
   if (error || !data) {

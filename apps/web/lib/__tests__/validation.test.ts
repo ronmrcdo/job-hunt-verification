@@ -22,6 +22,28 @@ describe("submissionSchema", () => {
   });
 });
 
+describe("submissionSchema: text-or-url", () => {
+  it("accepts a URL-only submission (empty job_text)", () => {
+    const r = submissionSchema.safeParse({ job_text: "", job_url: "https://acme.co/careers/va" });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a text-only submission (no job_url)", () => {
+    const r = submissionSchema.safeParse({ job_text: "Virtual Assistant, $2,500/month" });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects when both job_text and job_url are empty", () => {
+    const r = submissionSchema.safeParse({ job_text: "", job_url: "" });
+    expect(r.success).toBe(false);
+  });
+
+  it("still rejects an over-long posting", () => {
+    const r = submissionSchema.safeParse({ job_text: "x".repeat(40001) });
+    expect(r.success).toBe(false);
+  });
+});
+
 describe("authSchema", () => {
   it("requires a valid email and 8+ char password", () => {
     expect(authSchema.safeParse({ email: "a@b.com", password: "1234567" }).success).toBe(false);

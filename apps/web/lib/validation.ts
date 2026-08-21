@@ -9,12 +9,24 @@ const optionalTrimmed = z
   .optional()
   .transform((v) => (v === "" ? undefined : v));
 
-export const submissionSchema = z.object({
-  job_text: z.string().trim().min(1, "Paste the posting.").max(40000, "That posting is too long."),
-  company_name: optionalTrimmed,
-  recruiter_email: optionalTrimmed.pipe(z.string().email().optional()),
-  job_url: optionalTrimmed.pipe(z.string().url().optional()),
-});
+export const submissionSchema = z
+  .object({
+    job_text: optionalTrimmed.pipe(z.string().max(40000, "That posting is too long.").optional()),
+    company_name: optionalTrimmed,
+    recruiter_email: optionalTrimmed.pipe(z.string().email().optional()),
+    job_url: optionalTrimmed.pipe(z.string().url().optional()),
+  })
+  .superRefine((val, ctx) => {
+    // A submission needs something to investigate: the pasted posting, or a
+    // link we can fetch (spec §11 URL submission).
+    if (!val.job_text && !val.job_url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["job_text"],
+        message: "Paste the posting or add a job link.",
+      });
+    }
+  });
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 
 export const authSchema = z.object({
