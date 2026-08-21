@@ -45,6 +45,58 @@ async def test_graph_runs_end_to_end_with_stubbed_nodes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_url_fetch_runs_before_intake_and_feeds_entities(monkeypatch):
+    # A link-only submission (empty job_text) fetches the page, and intake
+    # extracts the company from the fetched text — proving url_fetch runs
+    # before intake and its output reaches extraction. The intake LLM call
+    # is stubbed with an echo: it only returns "Acme Global" when the
+    # fetched text is actually present in the prompt it receives, so this
+    # test cannot pass unless url_fetch really ran first and its output
+    # reached intake — a constant-returning stub would not prove that.
+    from app.tools.fetcher import FetchResult
+    from app.graph.nodes import intake as intake_mod
+    from app.cost_tracker import NodeUsage
+
+    async def fake_fetch(url, **kw):
+        return FetchResult(url=url, ok=True, text="Acme Global is hiring a Virtual Assistant.")
+    monkeypatch.setattr(build.url_fetch_mod, "safe_fetch", fake_fetch)
+
+    async def fake_structured_call(model, schema, messages, *, node):
+        prompt = "\n".join(str(m[1]) for m in messages if isinstance(m, tuple))
+        company_name = "Acme Global" if "Acme Global is hiring" in prompt else None
+        return (
+            intake_mod._IntakeLLM(company_name=company_name),
+            NodeUsage(node=node, model="cheap"),
+        )
+    monkeypatch.setattr(intake_mod, "structured_call", fake_structured_call)
+
+    # Stub every other LLM/network node downstream of intake so only the
+    # url_fetch -> intake chain is under test, matching the stubbing
+    # convention used by the neighbouring end-to-end tests in this file.
+    async def stub_checks(s): return {"deterministic_signals": {"citation_drops": 0}}
+    async def stub_research(s): return {}
+    async def stub_crosspost(s): return {}
+    async def stub_conversation(s): return {}
+    async def stub_analysis(s): return {}
+    async def stub_advocate(s): return {}
+    async def stub_report(s):
+        return {"assessment": s.assessment.model_copy(update={"summary": "ok"})}
+    monkeypatch.setattr(build, "deterministic_checks_node", stub_checks)
+    monkeypatch.setattr(build, "company_research", stub_research)
+    monkeypatch.setattr(build, "job_crosspost_search", stub_crosspost)
+    monkeypatch.setattr(build, "conversation_analysis", stub_conversation)
+    monkeypatch.setattr(build, "analysis", stub_analysis)
+    monkeypatch.setattr(build, "devils_advocate", stub_advocate)
+    monkeypatch.setattr(build, "report_generation", stub_report)
+
+    graph = build.build_graph()
+    result = await graph.ainvoke(InvestigationState(
+        submission=RawSubmission(job_text="", job_url="https://acme.co/j")))
+    # entities is a channel value on the returned state
+    assert result["entities"].company_name == "Acme Global"
+
+
+@pytest.mark.asyncio
 async def test_injection_in_pasted_posting_fires_end_to_end(monkeypatch):
     """Regression proof for the final-review Critical fix: the pasted job
     posting must become a Source (via evidence_assembly) so the §9.2

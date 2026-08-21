@@ -1,8 +1,8 @@
 """Graph assembly (Task 5.6): wires every node into the compiled LangGraph
 StateGraph.
 
-Shape: intake -> parallel fan-out over {checks, research, crosspost,
-conversation} -> evidence barrier (consolidates the fan-out branches'
+Shape: url_fetch -> intake -> parallel fan-out over {checks, research,
+crosspost, conversation} -> evidence barrier (consolidates the fan-out branches'
 raw_findings/raw_sources accumulators into canonical findings/sources,
 see graph/state.py) -> injection scan -> analysis -> citation -> devils
 advocate -> banding -> report -> language linter.
@@ -24,6 +24,7 @@ from langgraph.graph import StateGraph, START, END
 
 from app.config import settings
 from app.graph.state import InvestigationState, Finding, Source
+from app.graph.nodes import url_fetch as url_fetch_mod
 from app.graph.nodes.intake import intake_extraction
 from app.graph.nodes.checks_node import deterministic_checks_node
 from app.graph.nodes.research import company_research
@@ -86,6 +87,7 @@ def _with_branch_timeout(node, *, name: str, category):
 
 def build_graph(checkpointer=None):
     g = StateGraph(InvestigationState)
+    g.add_node("url_fetch", url_fetch_mod.url_fetch)
     g.add_node("intake", intake_extraction)
     g.add_node("checks", _with_branch_timeout(
         deterministic_checks_node, name="deterministic_checks", category="domain"))
@@ -104,7 +106,8 @@ def build_graph(checkpointer=None):
     g.add_node("report", report_generation)
     g.add_node("linter", language_linter)
 
-    g.add_edge(START, "intake")
+    g.add_edge(START, "url_fetch")
+    g.add_edge("url_fetch", "intake")
     for branch in ("checks", "research", "crosspost", "conversation"):
         g.add_edge("intake", branch)
         g.add_edge(branch, "evidence")          # fan-in barrier
