@@ -51,8 +51,11 @@ function Checklist({
           THE POSTING
         </h1>
         <p className="max-w-[600px] text-[16px] leading-[1.6] text-secondary">
-          {investigation.submission.company_name || "The company"} · the posting. Steps close
-          as their evidence comes in, not in order.
+          {investigation.submission.company_name ||
+            investigation.entities?.company_name ||
+            investigation.title ||
+            "The company"}{" "}
+          · the posting. Steps close as their evidence comes in, not in order.
         </p>
         <StepList steps={steps} />
         <p className="text-[14px] text-muted">
