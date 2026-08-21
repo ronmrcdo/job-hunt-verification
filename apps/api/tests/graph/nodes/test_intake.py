@@ -59,3 +59,23 @@ async def test_intake_truncates_long_text(monkeypatch):
     state = InvestigationState(submission=RawSubmission(job_text=huge))
     await intake.intake_extraction(state)
     assert seen["len"] < settings.max_job_text_chars + 2000  # truncated before prompt
+
+@pytest.mark.asyncio
+async def test_intake_carries_recruiter_name_and_channel(monkeypatch):
+    # The report's RECRUITER row is "<name> · <channel>" (design prototype).
+    # Both halves are read from the posting text by the LLM; neither has a
+    # RawSubmission field to fall back to.
+    llm_out = ExtractedEntities(recruiter_name="John Smith", contact_channel="Telegram")
+
+    async def fake_call(model, schema, messages, *, node):
+        assert "recruiter_name" in schema.model_fields
+        assert "contact_channel" in schema.model_fields
+        return llm_out, NodeUsage(node=node, model="cheap", usd=0.0)
+
+    monkeypatch.setattr(intake, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(
+        job_text="Message John Smith on Telegram to start."))
+    ent = (await intake.intake_extraction(state))["entities"]
+    assert ent.recruiter_name == "John Smith"
+    assert ent.contact_channel == "Telegram"
