@@ -561,6 +561,7 @@ begin
   select top_up_balance into bal from user_check_quota where user_id = u;
   if bal is distinct from 0 then raise exception 'Case 14 FAIL: balance % (expected 0)', bal; end if;
 
+  delete from investigations where user_id = u;   -- investigations FK has no ON DELETE CASCADE; clear before the user delete
   delete from auth.users where id = u;
   raise notice 'Case 14 PASS';
 end $$;
@@ -711,6 +712,7 @@ begin
       r.weekly_used, r.weekly_limit, r.top_up_balance, r.resets_at;
   end if;
 
+  delete from investigations where user_id = u;   -- investigations FK has no ON DELETE CASCADE; clear before the user delete
   delete from auth.users where id = u;
   raise notice 'Case 15 PASS';
 end $$;
