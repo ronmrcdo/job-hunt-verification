@@ -63,6 +63,43 @@ async def test_case_band_within_expected(case, eval_runner):
     )
 
 
+_CALLOUT_CASES = [c for c in V0 if "expect_safety_callout" in c]
+
+
+@pytest.mark.parametrize("case", _CALLOUT_CASES, ids=[c["id"] for c in _CALLOUT_CASES])
+@pytest.mark.asyncio
+async def test_case_safety_callouts(case, eval_runner):
+    """§9.7 weaponized-recruitment regressions: link-scan safety callouts must
+    surface exactly where expected (danger classes) and stay silent on
+    neutral/soft classes (ATS allowlist, app store, open-redirect shape) —
+    the false-positive guard for this feature. Where `callout_forbids_company_name`
+    is set, the callout text must be entity-decoupled (spec §9.1 sabotage
+    defense: an unverified posting-text finding must never name the company
+    it's about)."""
+    state = await eval_runner(RawSubmission(**case["submission"]))
+    callouts = state.deterministic_signals.get("safety_callouts", [])
+    if case["expect_safety_callout"]:
+        assert callouts, f"[{MODEL_CONFIG}] {case['id']}: expected a safety callout, got none"
+    else:
+        assert not callouts, (
+            f"[{MODEL_CONFIG}] {case['id']}: expected no safety callout, got {callouts}"
+        )
+    if case.get("callout_forbids_company_name"):
+        name = (case["submission"].get("company_name") or "").strip()
+        assert name, f"{case['id']}: callout_forbids_company_name set but no company_name given"
+        for text in callouts:
+            assert name.lower() not in text.lower(), (
+                f"[{MODEL_CONFIG}] {case['id']}: safety callout leaked company name "
+                f"{name!r}: {text!r}"
+            )
+    if case.get("expect_no_link_finding"):
+        link_findings = [f for f in state.findings if f.id.startswith("linkscan")]
+        assert not link_findings, (
+            f"[{MODEL_CONFIG}] {case['id']}: expected no link-scan finding, got "
+            f"{[f.claim for f in link_findings]}"
+        )
+
+
 @pytest.mark.asyncio
 async def test_false_positive_rate_zero(eval_runner):
     """THE product-killing metric (spec §10): legit postings must never be

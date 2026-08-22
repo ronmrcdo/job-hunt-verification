@@ -55,6 +55,7 @@ from app.checks import deterministic as deterministic_checks_module
 from app.graph import build
 from app.graph.nodes import crosspost as crosspost_module
 from app.graph.nodes.evidence import POSTING_SOURCE_PREFIX as _POSTING_SOURCE_PREFIX
+from app.graph.nodes.report import build_safety_callouts as _build_safety_callouts
 from app.graph.state import ExtractedEntities, Finding, InvestigationState
 
 
@@ -231,6 +232,15 @@ async def _stub_advocate(state: InvestigationState) -> dict:
 # linter's `contains_accusation` gate (so the linter never makes a live
 # call either), without touching the band/confidence/coverage the rubric
 # already decided.
+#
+# `build_safety_callouts` (spec §9.7/§6.1) is called for real here, same as
+# the production `report_generation` node: it is a pure, deterministic
+# function over `state.findings`/`state.entities` — not an LLM call — so
+# stubbing it out along with the LLM summary would silently break the §9.7
+# eval gate's ability to see safety callouts at all (task 6.2 caught this:
+# without this call, `deterministic_signals["safety_callouts"]` never gets
+# set in stub mode, so every callout assertion fails even when the
+# link-scan -> citation -> banding pipeline is correct end-to-end).
 # ---------------------------------------------------------------------------
 
 async def _stub_report(state: InvestigationState) -> dict:
@@ -238,7 +248,9 @@ async def _stub_report(state: InvestigationState) -> dict:
     assessment = state.assessment.model_copy(update={
         "summary": f"[stub report] risk band {band} — rule-based stub evaluation, no live LLM call.",
     })
-    return {"assessment": assessment}
+    safety_callouts = _build_safety_callouts(state.findings, state.entities)
+    signals = {**state.deterministic_signals, "safety_callouts": safety_callouts}
+    return {"assessment": assessment, "deterministic_signals": signals}
 
 
 def build_and_maybe_stub(monkeypatch, live: bool):

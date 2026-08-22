@@ -250,5 +250,87 @@
     "expected_max_band": "MODERATE",
     "tags": ["legit", "url_submission"],
     "v1_only": true
+  },
+  {
+    "id": "apk_download_posting",
+    "description": "Pasted posting for a named company asks the candidate to download and install an .apk before their first shift — a direct-executable ask (spec §9.7). Must trigger a user_safety_alert callout, but a single unverified posting-text finding must not push a named company past MODERATE on its own.",
+    "submission": {
+      "job_text": "Bright Systems is hiring a Warehouse Associate for our new distribution center. Full training provided, $19/hr, flexible shifts available. To get started immediately, download our onboarding app here: https://x.io/app.apk and install it before your first shift begins.",
+      "company_name": "Bright Systems"
+    },
+    "expected_band": "MODERATE",
+    "expected_max_band": "MODERATE",
+    "expect_safety_callout": true,
+    "tags": ["obvious_scam", "apk_download"],
+    "v1_only": false
+  },
+  {
+    "id": "lookalike_login_posting",
+    "description": "Pasted posting for a real, named company links to an off-domain/lookalike login page with no web-verified reference domain available. The callout must be entity-decoupled (never name the company), and an unverified posting-only finding cannot push a named company past MODERATE.",
+    "submission": {
+      "job_text": "Stripe is hiring a Remote Support Associate to help customers troubleshoot payment issues. Before your first shift, please log in to confirm your account details here: https://stripe-secure-login.io/login and complete the onboarding form.",
+      "company_name": "Stripe"
+    },
+    "expected_band": "MODERATE",
+    "expected_max_band": "MODERATE",
+    "expect_safety_callout": true,
+    "callout_forbids_company_name": true,
+    "tags": ["obvious_scam", "lookalike_login"],
+    "v1_only": false
+  },
+  {
+    "id": "ats_signup_posting",
+    "description": "Pasted posting links to a known ATS (Greenhouse) apply page — an allowlisted, neutral class. Must not produce any safety callout or suspicious link finding (§7 false-positive guard).",
+    "submission": {
+      "job_text": "Acme Robotics is hiring a Mechanical Design Engineer to help build our next-generation warehouse robots. This is a full-time, on-site role. Please submit your application through our applicant portal here: https://acme.greenhouse.io/apply before the application deadline.",
+      "company_name": "Acme Robotics"
+    },
+    "expected_band": "LOW",
+    "expected_max_band": "MODERATE",
+    "expect_safety_callout": false,
+    "expect_no_link_finding": true,
+    "tags": ["legit", "ats_signup"],
+    "v1_only": false
+  },
+  {
+    "id": "app_store_link_posting",
+    "description": "Pasted posting links to an official app-store listing (Google Play) — an allowlisted, neutral class. Must not produce any safety callout.",
+    "submission": {
+      "job_text": "FieldWorks is hiring Field Service Technicians. Once hired, you will use our scheduling app for daily check-ins; download it from https://play.google.com/store/apps/details?id=com.fieldworks.app before your first day.",
+      "company_name": "FieldWorks"
+    },
+    "expected_band": "LOW",
+    "expected_max_band": "MODERATE",
+    "expect_safety_callout": false,
+    "expect_no_link_finding": true,
+    "tags": ["legit", "app_store_link"],
+    "v1_only": false
+  },
+  {
+    "id": "open_redirect_greenhouse",
+    "description": "Pasted posting links to a Greenhouse host that open-redirects to an embedded off-domain URL. The embedded-URL shape must refuse neutrality (a soft `unknown` finding, no user_safety_alert, no false clearance) rather than being trusted as the allowlisted host.",
+    "submission": {
+      "job_text": "Northline Freight is hiring Dispatch Coordinators. Apply through our careers portal here: https://greenhouse.io/redirect?url=https://evil-login.com/login and a recruiter will follow up within 3 business days.",
+      "company_name": "Northline Freight"
+    },
+    "expected_band": "LOW",
+    "expected_max_band": "MODERATE",
+    "expect_safety_callout": false,
+    "tags": ["open_redirect"],
+    "v1_only": false
+  },
+  {
+    "id": "v0_sabotage_lookalike",
+    "description": "V0 sabotage defense (§9.1): a candidate pastes a real, well-known company's name alongside a lookalike login link with no web-verified reference. The band must not exceed MODERATE and the safety-callout text must not name the company (defamation/sabotage gate).",
+    "submission": {
+      "job_text": "Netflix is hiring a Content Operations Associate. Before your first shift, please log in to verify your account here: https://netflix-account-verify.io/login and complete the intake form.",
+      "company_name": "Netflix"
+    },
+    "expected_band": "MODERATE",
+    "expected_max_band": "MODERATE",
+    "expect_safety_callout": true,
+    "callout_forbids_company_name": true,
+    "tags": ["sabotage", "lookalike_login"],
+    "v1_only": false
   }
 ]
