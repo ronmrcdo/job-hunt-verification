@@ -1,0 +1,170 @@
+name: job-hunt-verification-prod
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCTION stack. Standalone file — do NOT merge it with docker-compose.yml
+# (that one is dev-only: bind mounts, --reload, host networking, MailHog and
+# llama.cpp). Run it explicitly:
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# Differences from dev, deliberately:
+#   • Inngest runs `inngest start` (CLOUD mode, signing + event keys required,
+#     durable Postgres + Redis) instead of the ephemeral `inngest dev`.
+#   • No source bind mounts, no --reload — the images are the artifact.
+#   • Nothing publishes host ports; Traefik fronts everything over the shared
+#     external coolify network.
+#   • MailHog and llama.cpp are absent by design (dev-only conveniences).
+#
+# What is NOT in this file: Postgres/Auth/Storage for the application itself.
+# Production points at a managed or separately-hosted Supabase project via
+# DATABASE_URL / NEXT_PUBLIC_SUPABASE_*. The Postgres + Redis below belong to
+# Inngest alone (its own run state and queue) and are not the app database.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Shared env for the Python services (same image, different command).
+x-api-env: &api-env
+  # Application database — the production Supabase project's Postgres.
+  # Use the pooler/session URI, not a local host gateway.
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+  # Empty = real api.openai.com. Set to an OpenAI-compatible gateway if you
+  # front the provider yourself. (The dev-only `llama` service is not here.)
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:?TAVILY_API_KEY is required}
+  CHEAP_MODEL: ${CHEAP_MODEL:-gpt-5.6-luna}
+  STRONG_MODEL: ${STRONG_MODEL:-gpt-5.6-luna}
+  # `-` (not `:-`) so an explicit empty value passes through as "omit the param"
+  # (DeepSeek non-thinking mode); only an UNSET var falls back to the default.
+  CHEAP_REASONING_EFFORT: ${CHEAP_REASONING_EFFORT-low}
+  STRONG_REASONING_EFFORT: ${STRONG_REASONING_EFFORT-high}
+  # Structured-output coercion. Defaults are OpenAI-native (strict json_schema).
+  # DeepSeek rejects json_schema, so a DeepSeek deployment sets
+  # STRUCTURED_OUTPUT_METHOD=function_calling and STRUCTURED_OUTPUT_STRICT=false.
+  STRUCTURED_OUTPUT_METHOD: ${STRUCTURED_OUTPUT_METHOD:-json_schema}
+  STRUCTURED_OUTPUT_STRICT: ${STRUCTURED_OUTPUT_STRICT:-true}
+  # Per-1M-token USD pricing for the cost tracker; unset = $0 (unknown model).
+  COST_PRICES_JSON: ${COST_PRICES_JSON:-}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  inngest:
+    image: inngest/inngest:v1.43.0
+    restart: unless-stopped
+    command: >
+      inngest start
+      -u http://api-worker:8000/api/inngest
+    environment:
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required (openssl rand -hex 32)}
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required (openssl rand -hex 32)}
+      INNGEST_POSTGRES_URI: postgres://inngest:${INNGEST_POSTGRES_PASSWORD:?INNGEST_POSTGRES_PASSWORD is required}@inngest-postgres:5432/inngest?sslmode=disable
+      INNGEST_REDIS_URI: redis://inngest-redis:6379
+    depends_on:
+      inngest-postgres:
+        condition: service_healthy
+      inngest-redis:
+        condition: service_healthy
+    networks: [internal, coolify]
+    logging: *logging
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.jhv-inngest.loadbalancer.server.port=8288"
+
+      - "traefik.http.routers.jhv-inngest-events.rule=Host(`${INNGEST_HOST:-jobeverifai-inngest.ronmrcdo.dev}`) && PathPrefix(`/e/`)"
+      - "traefik.http.routers.jhv-inngest-events.priority=100"
+      - "traefik.http.routers.jhv-inngest-events.service=jhv-inngest"
+
+      - "traefik.http.routers.jhv-inngest.rule=Host(`${INNGEST_HOST:-jobeverifai-inngest.ronmrcdo.dev}`)"
+      - "traefik.http.routers.jhv-inngest.priority=1"
+      - "traefik.http.routers.jhv-inngest.service=jhv-inngest"
+      - "traefik.http.routers.jhv-inngest.middlewares=jhv-inngest-auth"
+      - "traefik.http.middlewares.jhv-inngest-auth.basicauth.users=${INNGEST_BASICAUTH_USERS:?INNGEST_BASICAUTH_USERS is required (docker run --rm httpd:alpine htpasswd -nbB admin '<password>')}"
+
+  inngest-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: inngest
+      POSTGRES_PASSWORD: ${INNGEST_POSTGRES_PASSWORD:?INNGEST_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: inngest
+    volumes:
+      - inngest-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inngest -d inngest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [internal]
+    logging: *logging
+
+  inngest-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - inngest-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [internal]
+    logging: *logging
+
+  api-worker:
+    build:
+      context: ./apps/api
+    image: ${IMAGE_PREFIX:-jobeverifai}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
+    environment:
+      <<: *api-env
+      INNGEST_BASE_URL: http://inngest:8288
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required}
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [internal, coolify]
+    logging: *logging
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jhv-worker.rule=Host(`${WORKER_HOST:-jobeverifai-worker.ronmrcdo.dev}`)"
+
+  web:
+    build:
+      context: ./apps/web
+      target: prod
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is required}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?NEXT_PUBLIC_SUPABASE_ANON_KEY is required}
+    image: ${IMAGE_PREFIX:-jobeverifai}/web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      NODE_ENV: production
+    networks: [coolify]
+    logging: *logging
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jhv-web.rule=Host(`${WEB_HOST:-jobeverifai.ronmrcdo.dev}`)"
+
+networks:
+  coolify:
+    external: true
+  internal:
+    driver: bridge
+
+volumes:
+  inngest-postgres-data:
+  inngest-redis-data:
