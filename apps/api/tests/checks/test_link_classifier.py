@@ -56,6 +56,22 @@ def test_benign_path_like_query_is_not_a_false_redirect():
     # the scheme-relative regex must not fire on `//` that isn't a host.
     assert c("https://acme.greenhouse.io/apply?next=/dashboard/home").kind == "ats_allowlisted"
 
+def test_single_slash_same_origin_redirect_back_stays_own_domain():
+    # §7 FP regression (FIX 5 follow-up): a single-slash same-origin redirect-back
+    # param on the company's OWN domain is benign and must stay neutral — the
+    # scheme-relative guard requires BOTH slashes (`//host`), not one.
+    assert c("https://acme.com/login?returnUrl=/profile.php",
+             dom="acme.com", verified=True).kind == "own_domain"
+
+def test_single_slash_same_origin_redirect_back_stays_ats():
+    assert c("https://acme.greenhouse.io/apply?next=/account.html").kind == "ats_allowlisted"
+
+def test_scheme_relative_evasion_cases_still_unknown():
+    # The true scheme-relative / embedded-URL evasions must STILL be caught.
+    assert c("https://greenhouse.io/redirect?url=//evil-login.com").kind == "unknown"
+    assert c("https://greenhouse.io/redirect?url=https%3A%2F%2Fevil-login.com").kind == "unknown"
+    assert c("https://greenhouse.io/redirect?url=https://evil-login.com").kind == "unknown"
+
 def test_userinfo_confusion_uses_real_host():
     # real host is evil.com, not greenhouse.io
     r = c("https://greenhouse.io@evil.com/login")

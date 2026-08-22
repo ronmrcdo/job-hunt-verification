@@ -39,10 +39,13 @@ _EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 # payloads (`url=https%3A%2F%2Fevil.example`) don't launder through (F5a):
 #   - an embedded absolute URL (`http(s)://...`)
 #   - a scheme-relative redirect target (`url=//evil.example`, `next=//evil.example`)
-#     — a redirect-style param immediately carrying `//host.tld`. The `[?&=]`
-#     anchor + required `.` in the host avoids matching benign path-like `//`.
+#     — a redirect-style param immediately carrying `//host.tld`. BOTH slashes
+#     are required: a single-slash `/relative?param` is a benign same-origin
+#     redirect-back on the link's own host (own_domain/ATS), not an off-host
+#     target, and must stay neutral (§7 false-positive guard). The `[?&=]`
+#     anchor + required `.` in the host further avoids matching benign `//`.
 _EMBEDDED_URL = re.compile(r"https?://", re.I)
-_SCHEME_RELATIVE_REDIRECT = re.compile(r"[?&=]//?[a-z0-9.-]+\.", re.I)
+_SCHEME_RELATIVE_REDIRECT = re.compile(r"[?&=]//[a-z0-9.-]+\.", re.I)
 
 
 def _has_embedded_redirect(query: str, fragment: str) -> bool:
