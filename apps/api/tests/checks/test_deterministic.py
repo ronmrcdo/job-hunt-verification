@@ -15,7 +15,8 @@ def ent(**kw):
 async def test_matching_email_domain(monkeypatch):
     monkeypatch.setattr(deterministic, "domain_age_days", lambda d, today: _val(900))
     monkeypatch.setattr(deterministic, "has_valid_mx", lambda d: _val(True))
-    sig = await deterministic.run_deterministic_checks(ent(), today=date(2026, 1, 1))
+    sig = await deterministic.run_deterministic_checks(
+        ent(), today=date(2026, 1, 1), verified_canonical_domain="acme.com")
     assert sig["email_domain_matches"] is True
     assert sig["recruiter_is_ats"] is False
     assert sig["homoglyph_hit"] is False
@@ -46,7 +47,8 @@ async def test_homoglyph_domain_flagged(monkeypatch):
     monkeypatch.setattr(deterministic, "has_valid_mx", lambda d: _val(True))
     sig = await deterministic.run_deterministic_checks(
         ent(company_domain="acme-globall.com", candidate_real_domain="acme-global.com",
-            recruiter_email="jo@acme-globall.com"), today=date(2026, 1, 1))
+            recruiter_email="jo@acme-globall.com"), today=date(2026, 1, 1),
+        verified_canonical_domain="acme-global.com")
     assert sig["homoglyph_hit"] is True
 
 
@@ -76,6 +78,39 @@ async def test_url_flags_empty_for_clean_https(monkeypatch):
     sig = await deterministic.run_deterministic_checks(
         ent(job_url="https://acme.com/careers/123"), today=date(2026, 1, 1))
     assert sig["url_flags"] == []
+
+
+@pytest.mark.asyncio
+async def test_homoglyph_unknown_without_verified_reference(monkeypatch):
+    monkeypatch.setattr(deterministic, "domain_age_days", lambda d, today: _val(900))
+    monkeypatch.setattr(deterministic, "has_valid_mx", lambda d: _val(True))
+    sig = await deterministic.run_deterministic_checks(
+        ent(company_domain="acme-globall.com", candidate_real_domain="acme-global.com"),
+        today=date(2026, 1, 1))
+    assert sig["homoglyph_hit"] == "unknown"
+    assert sig["entity_ownership_confirmed"] is False
+
+
+@pytest.mark.asyncio
+async def test_homoglyph_hit_with_verified_reference(monkeypatch):
+    monkeypatch.setattr(deterministic, "domain_age_days", lambda d, today: _val(900))
+    monkeypatch.setattr(deterministic, "has_valid_mx", lambda d: _val(True))
+    sig = await deterministic.run_deterministic_checks(
+        ent(company_domain="acme-globall.com", candidate_real_domain=None),
+        today=date(2026, 1, 1), verified_canonical_domain="acme-global.com")
+    assert sig["homoglyph_hit"] is True
+    assert sig["entity_ownership_confirmed"] is False  # submitted != verified
+
+
+@pytest.mark.asyncio
+async def test_entity_ownership_confirmed_when_registrable_match(monkeypatch):
+    monkeypatch.setattr(deterministic, "domain_age_days", lambda d, today: _val(900))
+    monkeypatch.setattr(deterministic, "has_valid_mx", lambda d: _val(True))
+    sig = await deterministic.run_deterministic_checks(
+        ent(company_domain="acme.com", candidate_real_domain=None),
+        today=date(2026, 1, 1), verified_canonical_domain="acme.com")
+    assert sig["entity_ownership_confirmed"] is True
+    assert sig["homoglyph_hit"] is False
 
 
 async def _val(v):

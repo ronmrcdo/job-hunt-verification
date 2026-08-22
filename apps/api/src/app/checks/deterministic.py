@@ -15,6 +15,7 @@ from app.tools.rdap import domain_age_days
 from app.tools.dns_checks import has_valid_mx
 from app.checks.ats_allowlist import is_ats_domain
 from app.checks.homoglyph import homoglyph_hit
+from app.checks.domain_match import registrable_suffix_match
 
 
 def _email_domain(email: str | None) -> str | None:
@@ -35,10 +36,10 @@ def _url_flags(url: str | None) -> list[str]:
     return flags
 
 
-async def run_deterministic_checks(entities, *, today: date) -> dict:
+async def run_deterministic_checks(entities, *, today: date, verified_canonical_domain: str | None = None) -> dict:
     company_domain = (entities.company_domain or "").lower() or None
     email_domain = _email_domain(entities.recruiter_email)
-    real_domain = (entities.candidate_real_domain or "").lower() or None
+    ref = (verified_canonical_domain or "").lower() or None
 
     age = await domain_age_days(company_domain, today=today) if company_domain else None
     mx = await has_valid_mx(company_domain) if company_domain else None
@@ -47,11 +48,26 @@ async def run_deterministic_checks(entities, *, today: date) -> dict:
     if email_domain and company_domain:
         email_matches = email_domain == company_domain
 
+    # Gap A (spec §9.7): the homoglyph check must trust ONLY a web-verified
+    # reference domain, never the LLM-extracted `candidate_real_domain` --
+    # an attacker-controlled input the LLM could be tricked into echoing
+    # back, which would launder a lookalike domain as "verified real".
+    if company_domain is None:
+        homoglyph: bool | str = False
+    elif ref is None:
+        homoglyph = "unknown"
+    else:
+        homoglyph = homoglyph_hit(company_domain, ref)
+
+    ownership_confirmed = bool(
+        ref and company_domain and registrable_suffix_match(company_domain, ref))
+
     return {
         "domain_age_days": age,
         "mx_valid": mx,
         "email_domain_matches": email_matches,
-        "homoglyph_hit": homoglyph_hit(company_domain, real_domain) if company_domain else False,
+        "homoglyph_hit": homoglyph,
+        "entity_ownership_confirmed": ownership_confirmed,
         "recruiter_is_ats": is_ats_domain(email_domain) if email_domain else False,
         "url_flags": _url_flags(getattr(entities, "job_url", None)),
     }
