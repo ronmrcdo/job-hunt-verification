@@ -75,6 +75,26 @@ def _pack(state: InvestigationState) -> str:
     )
 
 
+def build_safety_callouts(findings, entities) -> list[str]:
+    """Deterministic §9.7 safety callouts. Unverified asks are entity-decoupled
+    (never name the company); verified asks may carry company context. All links
+    are defanged (spec §9.5)."""
+    outs: list[str] = []
+    for f in findings:
+        if not getattr(f, "user_safety_alert", False):
+            continue
+        text = defang_text(f.claim)
+        if f.provenance == "user_provided_unverified":
+            name = (entities.company_name or "").strip()
+            if name:
+                text = text.replace(name, "the employer")
+            outs.append("Safety warning — a posting you submitted asks you to take a risky "
+                        f"action. {text} Do not do this before verifying independently.")
+        else:
+            outs.append(f"Safety warning — {text} Do not do this before verifying independently.")
+    return outs
+
+
 def _with_payment_check(checklist: list[str], band: str) -> list[str]:
     if band not in ("HIGH", "CRITICAL"):
         return checklist
@@ -100,6 +120,8 @@ async def report_generation(state: InvestigationState) -> dict:
     findings = [f.model_copy(update={"claim": defang_text(f.claim)}) for f in state.findings]
 
     assessment = state.assessment.model_copy(update={"summary": summary})
-    signals = {**state.deterministic_signals, "what_to_verify": what_to_verify}
+    safety_callouts = build_safety_callouts(state.findings, state.entities)
+    signals = {**state.deterministic_signals, "what_to_verify": what_to_verify,
+               "safety_callouts": safety_callouts}
     return {"assessment": assessment, "deterministic_signals": signals, "cost_events": [usage],
             "findings": findings}
