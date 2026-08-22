@@ -57,7 +57,7 @@ services:
   api-worker:
     build:
       context: ./apps/api
-    image: ${IMAGE_PREFIX:-jobeverifai}/api:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-jobverifai}/api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
     volumes:
@@ -71,7 +71,7 @@ services:
     environment:
       <<: *api-env
       # Inngest runs as its own Coolify pod. Point this at that server's URL
-      # (its /e/ event endpoint), e.g. https://jobeverifai-inngest.ronmrcdo.dev.
+      # (its /e/ event endpoint), e.g. https://jobverifai-inngest.ronmrcdo.dev.
       INNGEST_BASE_URL: ${INNGEST_BASE_URL:?INNGEST_BASE_URL is required (URL of the separately-deployed Inngest server)}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required}
@@ -85,7 +85,7 @@ services:
     logging: *logging
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.jhv-worker.rule=Host(`${WORKER_HOST:-jobeverifai-worker.ronmrcdo.dev}`)"
+      - "traefik.http.routers.jhv-worker.rule=Host(`${WORKER_HOST:-jobverifai-worker.ronmrcdo.dev}`)"
       - "traefik.http.services.jhv-worker.loadbalancer.server.port=8000"
 
   web:
@@ -95,7 +95,7 @@ services:
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is required}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?NEXT_PUBLIC_SUPABASE_ANON_KEY is required}
-    image: ${IMAGE_PREFIX:-jobeverifai}/web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-jobverifai}/web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
@@ -105,7 +105,7 @@ services:
     logging: *logging
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.jhv-web.rule=Host(`${WEB_HOST:-jobeverifai.ronmrcdo.dev}`)"
+      - "traefik.http.routers.jhv-web.rule=Host(`${WEB_HOST:-jobverifai.ronmrcdo.dev}`)"
       - "traefik.http.services.jhv-web.loadbalancer.server.port=3000"
 
 networks:
