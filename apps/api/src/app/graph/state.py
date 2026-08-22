@@ -66,6 +66,11 @@ class InvestigationState(BaseModel):
     # submission). Kept separate from the immutable submission so the pasted
     # posting and the fetched page stay distinguishable end to end.
     fetched_posting: str | None = None
+    # A company domain corroborated by a backend-fetched authoritative source
+    # (research disambiguation, spec §7). This — never the LLM-extracted
+    # candidate_real_domain — is the reference the homoglyph check and the
+    # §9.7 credential floor trust (Gap A / S5). None until research confirms it.
+    verified_canonical_domain: str | None = None
     fetch_failed: bool = False
     sources: list[Source] = Field(default_factory=list)
     # Pre-dedupe accumulators for the parallel fan-out branches (checks/research/
