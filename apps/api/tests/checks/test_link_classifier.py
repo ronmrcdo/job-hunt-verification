@@ -41,6 +41,21 @@ def test_open_redirect_in_fragment_is_unknown():
     # embedded absolute URL in fragment -> same guard prevents neutrality
     assert c("https://greenhouse.io/redirect#url=https://evil-login.com").kind == "unknown"
 
+def test_open_redirect_percent_encoded_is_unknown():
+    # F5a: a percent-encoded embedded URL must be URL-decoded before the check,
+    # so it can't launder through the ATS allowlist as neutral.
+    assert c("https://greenhouse.io/redirect?url=https%3A%2F%2Fevil-login.com").kind == "unknown"
+
+def test_open_redirect_scheme_relative_is_unknown():
+    # F5a: a scheme-relative redirect target (`url=//evil-login.com`) is an
+    # open-redirect shape and must refuse neutrality.
+    assert c("https://greenhouse.io/redirect?url=//evil-login.com").kind == "unknown"
+
+def test_benign_path_like_query_is_not_a_false_redirect():
+    # Guard: an ATS host with a benign path-like query value must stay neutral —
+    # the scheme-relative regex must not fire on `//` that isn't a host.
+    assert c("https://acme.greenhouse.io/apply?next=/dashboard/home").kind == "ats_allowlisted"
+
 def test_userinfo_confusion_uses_real_host():
     # real host is evil.com, not greenhouse.io
     r = c("https://greenhouse.io@evil.com/login")

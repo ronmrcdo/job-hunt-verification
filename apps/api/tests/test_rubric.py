@@ -267,8 +267,56 @@ def test_high_severity_deterministic_capped_for_named_company_when_unconfirmed()
     assert a.band == "MODERATE"
 
 
+def test_credential_floor_fires_from_real_scan_links_output():
+    # I2: drive the credential-lookalike floor from the REAL `scan_links(...)`
+    # output rather than a hand-written claim string, so the floor can't
+    # silently stop firing if the scanner's claim wording changes. A
+    # web_verified lookalike login (canonical_verified=True + a homoglyph host)
+    # must floor a named, ownership-unconfirmed company at HIGH.
+    from app.checks.link_scan import scan_links
+    findings = scan_links(
+        "Please log in to continue: https://acme-globall.com/login to verify your account.",
+        provenance="web_verified", canonical_domain="acme-global.com",
+        canonical_verified=True, id_prefix="linkscan_fetched",
+        source_ids=["src_det_fetched"])
+    assert any(f.user_safety_alert and "lookalike" in f.claim.lower() and "log in" in f.claim.lower()
+               for f in findings), f"scan_links did not emit a lookalike login finding: {findings}"
+    a = compute_assessment(_state(findings, company="Acme Global"))
+    assert a.band in ("HIGH", "CRITICAL")
+
+
 def test_high_severity_deterministic_uncapped_when_ownership_confirmed():
     f = Finding(id="det_homoglyph", category="domain", direction="suspicious", severity="high",
                 claim="lookalike ...", provenance="deterministic", source_ids=["src_det_domain"])
     a = compute_assessment(_state([f], signals={"entity_ownership_confirmed": True}))
+    assert a.band in ("HIGH", "CRITICAL")
+
+
+def test_f2_mixed_provenance_sabotage_capped_at_moderate():
+    # F2/C2 joint-bypass regression: a real company_name + throwaway new domain
+    # (LOW deterministic finding) + pasted off-domain login link (HIGH
+    # user_provided_unverified). The LOW deterministic finding broke the old
+    # "all-upv" cap; being LOW it escaped the old high-severity deterministic
+    # gate — so neither old cap fired and the named company banded HIGH from
+    # pure attacker input. The unified cap must hold it at MODERATE: no
+    # web_verified suspicious finding is present.
+    det_new_domain = _f("det_new_domain", "low", prov="deterministic", category="domain",
+                        claim="Company domain was registered 3 days ago (very recent).")
+    upv_login = _f("linkscan_paste_0", "high", prov="user_provided_unverified",
+                   category="communication",
+                   claim="The posting asks you to log in on a site that is not the "
+                         "company's own domain (x).")
+    a = compute_assessment(_state([det_new_domain, upv_login], company="Acme"))
+    assert a.band == "MODERATE"
+
+
+def test_web_verified_high_suspicious_on_named_unconfirmed_company_not_capped():
+    # The unified cap must NOT muzzle a genuine web-verified suspicious finding:
+    # a named, ownership-unconfirmed company can still reach HIGH when the
+    # suspicion is web_verified (independently fetched), not attacker-supplied.
+    a = compute_assessment(_state([
+        _f("wv1", "high", prov="web_verified", category="job"),
+        _f("wv2", "medium", prov="web_verified", category="company"),
+        _f("wv3", "medium", prov="web_verified", category="domain"),
+    ], company="Acme"))
     assert a.band in ("HIGH", "CRITICAL")

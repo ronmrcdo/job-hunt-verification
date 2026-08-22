@@ -151,15 +151,35 @@ async def _stub_intake(state: InvestigationState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# research stub: no-op. The posting Source now comes from evidence_assembly
-# for real (see module docstring) — a conservative, always-safe stand-in for
-# the network-dependent company-research node, same pattern as
-# `_stub_advocate` below.
+# research stub: conservative canonical-domain confirmation. The posting Source
+# comes from evidence_assembly for real (see module docstring). Production
+# `company_research` confirms `verified_canonical_domain` only when an
+# independently-fetched, on-target source's host registrable-matches the
+# company domain (research._confirm_canonical, spec §9.7 Gap A). With no
+# network in stub mode we synthesize candidate sources from the URLs the
+# posting itself references and reuse the REAL `_confirm_canonical`: the domain
+# is confirmed only when the posting links to the company's own registrable
+# domain — exactly what production would confirm for a genuine own-domain
+# posting, and never for a scam/lookalike domain. This makes the C1 own-domain-
+# neutral path (FIX 1) observable end-to-end.
 # ---------------------------------------------------------------------------
+
+from datetime import datetime, timezone  # noqa: E402
+
+from app.checks.link_scan import extract_urls  # noqa: E402
+from app.graph.nodes.research import _confirm_canonical  # noqa: E402
+from app.graph.state import Source  # noqa: E402
 
 
 async def _stub_research(state: InvestigationState) -> dict:
-    return {}
+    urls = extract_urls(state.submission.job_text or "")
+    synth = [
+        Source(id=f"stub_res_{i}", url=u, kind="fetched_page",
+               retrieved_at=datetime.now(timezone.utc), content_summary="", raw_excerpt=None)
+        for i, u in enumerate(urls)
+    ]
+    confirmed = _confirm_canonical(state.entities, synth)
+    return {"verified_canonical_domain": confirmed} if confirmed else {}
 
 
 # ---------------------------------------------------------------------------

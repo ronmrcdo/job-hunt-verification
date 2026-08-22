@@ -80,6 +80,23 @@ def test_keeps_finding_grounded_on_real_content_token_beyond_entity_name():
     assert out["deterministic_signals"]["citation_drops"] == 0
 
 
+def test_linkscan_finding_survives_without_token_overlap():
+    # F4: a linkscan safety finding is deterministically grounded (the scanner
+    # pulled the URL from the real full posting text). When the URL sits past
+    # the 2000-char excerpt cap, the cited `src_det_posting` excerpt shares no
+    # tokens with the claim — but the finding must STILL survive (padding must
+    # not defeat the safety callout). It only needs a resolving source_id.
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+        sources=[_src("src_det_posting", "Submitted job posting text: " + "filler " * 50)],
+        findings=[_f("linkscan_paste_0", ["src_det_posting"],
+                     "The posting asks you to download and run software "
+                     "(https://evil.example/app.apk).",
+                     prov="user_provided_unverified")])
+    out = citation_validator(state)
+    assert len(out["findings"]) == 1
+    assert out["deterministic_signals"]["citation_drops"] == 0
+
+
 def test_citation_drops_merges_into_existing_signals():
     state = InvestigationState(submission=RawSubmission(job_text="x"),
         sources=[],
