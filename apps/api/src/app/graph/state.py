@@ -48,6 +48,10 @@ class Finding(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     provenance: Provenance
     mitigation: str | None = None
+    # §9.7: this finding is a request for the user to take a compromising
+    # action (run an executable, log in on a non-company site). Surfaces as an
+    # unconditional safety callout; never raises the named company's band.
+    user_safety_alert: bool = False
 
 class FinalAssessment(BaseModel):
     band: Band
