@@ -42,10 +42,10 @@ function Checklist({
   steps: InvestigationStep[];
 }) {
   return (
-    <main id="main-content" className="mx-auto max-w-page px-8 py-11">
+    <main id="main-content" className="mx-auto max-w-page px-8 py-11 max-[430px]:px-5">
       <div className="flex flex-col gap-6">
         <MicroLabel aria-live="polite">WORKING THROUGH THE POSTING</MicroLabel>
-        <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em]">
+        <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em] max-[430px]:text-[30px]">
           WORKING THROUGH
           <br />
           THE POSTING
@@ -128,7 +128,7 @@ function Report({ investigation }: { investigation: Investigation }) {
           <BandBanner vm={completeVm} confidenceSlot={<ConfidencePanel vm={completeVm} />} />
         </RevealItem>
       </Reveal>
-      <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 md:grid-cols-[1fr_320px]">
+      <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 max-[430px]:px-5 md:grid-cols-[1fr_320px]">
         <Reveal className="flex flex-col gap-10">
           <RevealItem>
             <Summary summary={completeVm.summary} />

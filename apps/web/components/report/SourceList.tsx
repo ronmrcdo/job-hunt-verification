@@ -14,8 +14,8 @@ export function SourceList({ sources }: SourceListProps) {
     <ul className="space-y-3">
       {sources.map((source, index) => (
         <li key={`${source.name}-${index}`} className="text-[13px]">
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="min-w-0 break-all font-mono">
               {source.defang ? <DefangedText value={source.name} /> : source.name}
             </span>
             <span className="text-[10px] uppercase tracking-[0.1em] text-muted">{source.stampMono}</span>

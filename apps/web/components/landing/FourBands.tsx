@@ -43,10 +43,12 @@ const BANDS: BandCard[] = [
 
 export function FourBands() {
   return (
-    <section className="bg-surface-soft">
-      <Reveal className="mx-auto flex max-w-page flex-col gap-6 px-8 pb-[52px] pt-12">
+    // Anchor target for the header's "Risk bands" link; scroll-mt offsets
+    // the 66px sticky header so the heading lands below it, not under it.
+    <section id="risk-bands" className="scroll-mt-[66px] bg-surface-soft">
+      <Reveal className="mx-auto flex max-w-page flex-col gap-6 px-8 pb-[52px] pt-12 max-[430px]:px-5">
         <RevealItem className="flex flex-wrap items-baseline justify-between gap-4">
-          <h2 className="m-0 text-[34px] font-bold tracking-[-0.03em]">FOUR BANDS, NOT A SCORE</h2>
+          <h2 className="m-0 text-[34px] font-bold tracking-[-0.03em] max-[430px]:text-[24px]">FOUR BANDS, NOT A SCORE</h2>
           <div className="max-w-[520px] text-[14px] leading-[1.55] text-secondary">
             A band says how the evidence reads. A separate confidence level says how much of it we could
             actually verify.

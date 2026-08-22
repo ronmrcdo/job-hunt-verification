@@ -21,22 +21,23 @@ export default async function Page() {
   return (
     <>
       <SiteHeader />
-      <main id="main-content" className="mx-auto max-w-page px-8 py-11">
+      <main id="main-content" className="mx-auto max-w-page px-8 py-11 max-[430px]:px-5">
         <div className="flex flex-wrap items-start gap-11">
           <div className="flex flex-1 basis-[560px] flex-col gap-6">
             <div className="flex flex-col gap-3">
-              <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em]">
+              <h1 className="m-0 text-[44px] font-bold leading-[0.98] tracking-[-0.035em] max-[430px]:text-[30px]">
                 CHECK A JOB
               </h1>
               <p className="max-w-[600px] text-[16px] leading-[1.6] text-secondary">
-                Paste the posting, add anything else you know, and we&rsquo;ll run the check.
+                Paste the posting, a recruiter email, or your conversation with them &mdash; add anything
+                else you know, and we&rsquo;ll run the check.
               </p>
             </div>
 
             <NewCheckForm initialJobText="" />
           </div>
 
-          <div className="flex flex-1 basis-[280px] flex-col gap-3">
+          <div className="flex min-w-0 flex-1 basis-[280px] flex-col gap-3">
             <h2 className="m-0 text-[11px] uppercase tracking-[0.12em] text-muted">
               Recent checks
             </h2>

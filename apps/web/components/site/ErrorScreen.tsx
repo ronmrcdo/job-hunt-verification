@@ -74,7 +74,7 @@ export function ErrorScreen({
     >
       <motion.main
         id="main-content"
-        className="mx-auto grid max-w-page grid-cols-1 items-start gap-10 px-8 py-16 md:grid-cols-[1fr_380px]"
+        className="mx-auto grid max-w-page grid-cols-1 items-start gap-10 px-8 py-16 max-[430px]:px-5 md:grid-cols-[1fr_380px]"
         variants={motionPreset.staggerParent}
         initial="hidden"
         animate="visible"

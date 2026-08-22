@@ -227,7 +227,11 @@ export function StepRow({ step, state, index = 0, finishedAt }: StepRowProps) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={screenEnterAt(index * 0.07)}
-      className="grid grid-cols-[88px_22px_1fr_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px]"
+      // On phones (≤430px) the four fixed tracks starve the title column, so
+      // collapse to three (timestamp · glyph · title) and drop the right-hand
+      // status label — the glyph already carries state — via max-[430px]:hidden
+      // on that cell below.
+      className="grid grid-cols-[88px_22px_1fr_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px] max-[430px]:grid-cols-[52px_18px_1fr] max-[430px]:gap-2"
       style={{
         // Handoff: running rows tint #FAFAFA; transition background 400ms ease.
         background: s.runningRow ? "var(--color-neutral-row)" : "var(--color-page)",
@@ -238,16 +242,20 @@ export function StepRow({ step, state, index = 0, finishedAt }: StepRowProps) {
         {col1}
       </div>
       <StepGlyph state={state} s={s} />
-      <div>
+      {/* min-w-0 so this 1fr track can shrink below its content instead of
+          overflowing the row (grid children default to min-width:auto);
+          break-words folds a long unbroken token — same overflow guard the
+          SourceList/RecentChecks rows use. */}
+      <div className="min-w-0">
         <div
-          className="text-[16px] font-bold"
+          className="text-[16px] font-bold break-words"
           style={{ color: s.title, transition: "color 0.35s ease" }}
         >
           {step.title}
         </div>
         {showNote && (
           <div
-            className="mt-1 text-[13px] leading-[1.5]"
+            className="mt-1 text-[13px] leading-[1.5] break-words"
             style={{ color: s.note, transition: "color 0.35s ease" }}
           >
             {note}
@@ -255,7 +263,7 @@ export function StepRow({ step, state, index = 0, finishedAt }: StepRowProps) {
         )}
       </div>
       <div
-        className="pt-[3px] text-right text-[10px] uppercase tracking-[0.1em]"
+        className="pt-[3px] text-right text-[10px] uppercase tracking-[0.1em] max-[430px]:hidden"
         style={{ color: s.label }}
       >
         {RIGHT_LABEL[state]}

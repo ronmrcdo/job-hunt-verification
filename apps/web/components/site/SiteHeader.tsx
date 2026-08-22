@@ -73,7 +73,7 @@ export function SiteHeader() {
           <main>, so the nav lines up with the page content (Investigator
           Prototype.dc.html lines 29-30). */}
       <header className="sticky top-0 z-40 border-b border-rule bg-page">
-        <div className="mx-auto flex h-[66px] max-w-page items-center px-8">
+        <div className="mx-auto flex h-[66px] max-w-page items-center px-8 max-[430px]:px-5">
           {/* The wordmark is the conventional "back to home" affordance —
               logo mark and name are one link so either half works. */}
           <Link href="/" aria-label="Jobverifai home" className="flex items-center gap-3">
@@ -81,36 +81,50 @@ export function SiteHeader() {
             <span className="text-[17px] font-bold tracking-[-0.015em]">Jobverifai</span>
           </Link>
 
-          <span className="ml-4 border-l border-rule pl-4 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-            JOB LEGITIMACY INVESTIGATOR
-          </span>
-
-          <nav className="ml-auto flex items-center gap-[26px]">
-            <Link
-              href="/#how-it-works"
-              className="text-[12px] uppercase tracking-[0.1em] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
-            >
-              How it works
-            </Link>
-            <Link
-              href="/#risk-bands"
-              className="text-[12px] uppercase tracking-[0.1em] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
-            >
-              Risk bands
-            </Link>
-            {account ? (
-              <AccountMenu account={account} onSignOut={onSignOut} />
-            ) : (
+          {/* Two zones on the right, split by spacing so the eye reads
+              "navigate" then "act" instead of one wall of labels: the in-page
+              anchor links, then the auth + CTA action cluster. */}
+          <nav className="ml-auto flex items-center gap-8 max-[430px]:gap-4">
+            {/* Navigation zone — secondary in-page anchors; collapses out on
+                phones (≤md) so the essential auth + CTA affordances fit. */}
+            <div className="hidden items-center gap-6 md:flex">
               <Link
-                href="/sign-in"
-                className="text-[12px] uppercase tracking-[0.1em] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
+                href="/#how-it-works"
+                className="text-[13px] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
               >
-                Sign in
+                How it works
               </Link>
-            )}
-            <Button variant="primary" onClick={() => router.push("/verify")}>
-              Check a job
-            </Button>
+              <Link
+                href="/#risk-bands"
+                className="text-[13px] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
+              >
+                Risk bands
+              </Link>
+            </div>
+
+            {/* Actions zone — account affordance + primary CTA, grouped tight
+                and set apart from navigation by the parent's larger gap. */}
+            <div className="flex items-center gap-4 max-[430px]:gap-3">
+              {account ? (
+                <AccountMenu account={account} onSignOut={onSignOut} />
+              ) : (
+                <Link
+                  href="/sign-in"
+                  className="text-[13px] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink"
+                >
+                  Sign in
+                </Link>
+              )}
+              {/* Override the primary button's mobile full-width rule: inside the
+                  header row the CTA must stay compact, not span the bar. */}
+              <Button
+                variant="primary"
+                className="max-[430px]:w-auto!"
+                onClick={() => router.push("/verify")}
+              >
+                Check a job
+              </Button>
+            </div>
           </nav>
         </div>
       </header>
@@ -171,7 +185,7 @@ function AccountMenu({ account, onSignOut }: AccountMenuProps) {
         onKeyDown={handleKeyDown}
         className="flex items-center gap-1.5 text-[13px] text-secondary transition-[transform,color] duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink active:scale-[0.98]"
       >
-        <span className="max-w-[160px] truncate">{account.name}</span>
+        <span className="max-w-[160px] truncate max-[430px]:max-w-[90px]">{account.name}</span>
         {/* Chevron rotates to point up while open — a quiet state cue. */}
         <svg
           viewBox="0 0 10 6"

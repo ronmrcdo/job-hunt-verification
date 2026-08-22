@@ -33,10 +33,12 @@ const STEPS: Step[] = [
 
 export function HowItRuns() {
   return (
-    <section>
-      <Reveal className="mx-auto flex max-w-page flex-col gap-[26px] px-8 pb-[52px] pt-12">
+    // Anchor target for the header's "How it works" link; scroll-mt offsets
+    // the 66px sticky header so the heading lands below it, not under it.
+    <section id="how-it-works" className="scroll-mt-[66px]">
+      <Reveal className="mx-auto flex max-w-page flex-col gap-[26px] px-8 pb-[52px] pt-12 max-[430px]:px-5">
         <RevealItem className="flex flex-wrap items-baseline justify-between gap-4">
-          <h2 className="m-0 text-[34px] font-bold tracking-[-0.03em]">HOW A CHECK RUNS</h2>
+          <h2 className="m-0 text-[34px] font-bold tracking-[-0.03em] max-[430px]:text-[24px]">HOW A CHECK RUNS</h2>
           <div className="text-[10px] uppercase tracking-[0.16em] text-muted">Four stages · about 1–2 minutes</div>
         </RevealItem>
         <RevealGroup className="flex flex-wrap gap-[28px]">

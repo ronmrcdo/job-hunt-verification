@@ -34,7 +34,7 @@ export function VerifyChecklist({ items }: VerifyChecklistProps) {
         <span className="font-mono text-[10px] text-muted">{pad2(items.length)}</span>
       </div>
       <div className="px-6 pt-2">
-        <h2 className="text-[28px] font-bold uppercase leading-tight tracking-tight">
+        <h2 className="text-[28px] font-bold uppercase leading-tight tracking-tight max-[430px]:text-[20px]">
           {headingFor(items.length)}
         </h2>
         <p className="mt-2 text-muted">These close the gaps we couldn't. Each takes a few minutes.</p>

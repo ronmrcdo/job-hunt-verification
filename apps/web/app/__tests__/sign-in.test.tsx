@@ -52,6 +52,21 @@ describe("Sign-in page", () => {
     expect(screen.getByText(/Job text detected/)).toBeTruthy();
   });
 
+  // The form card spans both grid rows, so without an explicit row template
+  // the browser hands its extra height to row 1 — switching to "Create
+  // account" grows the card and shoves the left-hand copy down. Pinning row 1
+  // to auto and letting row 2 absorb the slack keeps the copy anchored.
+  it("pins the first grid row to auto so a taller form can't shift the copy", async () => {
+    render(
+      <FlowProvider>
+        {await Page()}
+      </FlowProvider>,
+    );
+
+    const main = document.getElementById("main-content");
+    expect(main?.className).toContain("md:grid-rows-[auto_1fr]");
+  });
+
   it("renders the STEP 2 OF 3 micro label and the H1", async () => {
     render(
       <FlowProvider>

@@ -27,9 +27,9 @@ export function RecentChecks({ items }: { items: Investigation[] }) {
         <li key={item.id} className="border-b border-rule first:border-t">
           <Link
             href={`/investigations/${item.id}`}
-            className="flex items-center justify-between gap-4 py-3"
+            className="flex min-h-[44px] items-center justify-between gap-4 py-3 transition-opacity duration-150 [transition-timing-function:var(--ease-out)] active:opacity-70"
           >
-            <span className="truncate text-[14px]">
+            <span className="min-w-0 flex-1 truncate text-[14px]">
               {item.title ?? "Untitled posting"}
             </span>
             <span className="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
