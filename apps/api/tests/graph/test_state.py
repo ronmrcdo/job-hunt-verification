@@ -21,3 +21,14 @@ def test_submission_is_present_and_typed():
 def test_final_assessment_band_literal():
     a = FinalAssessment(band="MODERATE", confidence="LOW", summary="…", coverage=0.33)
     assert a.band == "MODERATE"
+
+def test_finding_user_safety_alert_defaults_false():
+    f = Finding(id="x", category="communication", direction="suspicious",
+                severity="high", claim="c", provenance="user_provided_unverified")
+    assert f.user_safety_alert is False
+
+def test_finding_user_safety_alert_settable():
+    f = Finding(id="x", category="communication", direction="suspicious",
+                severity="high", claim="c", provenance="web_verified",
+                user_safety_alert=True)
+    assert f.user_safety_alert is True
