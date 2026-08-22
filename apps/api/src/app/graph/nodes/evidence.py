@@ -118,4 +118,8 @@ def evidence_assembly(state: InvestigationState) -> dict:
             claim="We could not retrieve the linked job posting, so its contents were not "
                   "examined — treat as unverifiable, not evidence.",
             source_ids=["src_det_fetch_failed"], provenance="deterministic"))
-    return {"sources": canonical_sources, "findings": remapped_findings}
+    return {
+        "sources": canonical_sources,
+        "findings": remapped_findings,
+        "verified_canonical_domain": state.verified_canonical_domain,
+    }

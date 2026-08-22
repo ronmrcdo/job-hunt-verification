@@ -108,6 +108,22 @@ def test_no_fetched_source_when_nothing_fetched():
     assert not any(s.id == "src_det_fetched" for s in sources)
 
 
+def test_carries_verified_canonical_domain_from_state():
+    # research is the only node that sets this scalar; evidence_assembly
+    # must thread it through the fan-in barrier unchanged (spec §9.7 Gap A).
+    state = InvestigationState(
+        submission=RawSubmission(job_text="x"),
+        verified_canonical_domain="acme.com")
+    out = _run(state)
+    assert out["verified_canonical_domain"] == "acme.com"
+
+
+def test_verified_canonical_domain_defaults_to_none():
+    state = InvestigationState(submission=RawSubmission(job_text="x"))
+    out = _run(state)
+    assert out["verified_canonical_domain"] is None
+
+
 def test_injection_in_fetched_page_is_flagged():
     state = InvestigationState(
         submission=RawSubmission(job_text="x", job_url="https://acme.co/j"),
