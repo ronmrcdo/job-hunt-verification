@@ -82,9 +82,12 @@ describe("Landing page", () => {
       </FlowProvider>,
     );
 
+    // Substring match — the gate line shares its element with the
+    // "never ask you to pay" reassurance, and may gain more siblings.
     expect(
       screen.getByText(
         "You’ll be asked to sign in before the check runs, so the report stays private to you.",
+        { exact: false },
       ),
     ).toBeTruthy();
   });

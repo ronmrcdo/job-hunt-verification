@@ -7,6 +7,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { SiteHeader } from "../components/site/SiteHeader";
+import { SiteFooter } from "../components/site/SiteFooter";
 import { ScanField } from "../components/landing/ScanField";
 import { ThisWeekRail } from "../components/landing/ThisWeekRail";
 import { HowItRuns } from "../components/landing/HowItRuns";
@@ -78,7 +79,7 @@ export default function Page() {
             (animation-delay: 360ms in the prototype's `rise` keyframe on
             that <aside>). Stacks to one column on mobile. */}
         <motion.section
-          className="mx-auto flex w-full max-w-page flex-wrap gap-x-12 gap-y-16 px-8 pb-[60px] pt-16"
+          className="mx-auto flex w-full max-w-page flex-wrap gap-x-12 gap-y-16 px-8 pb-[60px] pt-16 max-[430px]:px-5"
           variants={motionPreset.staggerParent}
           initial="hidden"
           animate="visible"
@@ -89,6 +90,8 @@ export default function Page() {
               transition={motionPreset.screenEnterAt(0.04)}
               className="text-[11px] uppercase tracking-[0.18em] text-muted"
             >
+              <span className="font-semibold text-ink">Free — no payment required</span>
+              <span className="px-[8px] text-rule-strong">·</span>
               Evidence-backed · no scam verdicts · no scores
             </motion.div>
 
@@ -135,12 +138,22 @@ export default function Page() {
                     1–2 MIN
                   </div>
                 </div>
-                <Button variant="secondary" size="wide" onClick={onFillSample}>
+                {/* Below sm the two actions stack (the primary group's 300px
+                    basis + this button overflow the row). Match the primary
+                    row and fill the width so the stacked buttons align, instead
+                    of this one sitting at its natural content width. */}
+                <Button
+                  variant="secondary"
+                  size="wide"
+                  className="max-sm:w-full"
+                  onClick={onFillSample}
+                >
                   TRY THE SAMPLE CASE
                 </Button>
               </div>
               <div className="text-[13px] text-muted">
-                You&rsquo;ll be asked to sign in before the check runs, so the report stays private to you.
+                We&rsquo;ll never ask you to pay for anything. You&rsquo;ll be asked to sign in before the check runs,
+                so the report stays private to you.
               </div>
             </motion.div>
           </div>
@@ -148,7 +161,13 @@ export default function Page() {
           <motion.div
             variants={motionPreset.screenEnterVariants}
             transition={motionPreset.screenEnterAt(0.36)}
-            className="flex-[0_1_340px]"
+            // Mobile-first: the rail fills its row by default (grow 1, basis
+            // 100%), so whenever it has wrapped onto its own line its right edge
+            // lines up with the full-width column above. Only at lg — where the
+            // ~960px content column finally fits the 560+340+48 two-column row —
+            // does it become the fixed 340px-basis sidebar (grow 0) beside the
+            // growing left column.
+            className="flex-[1_1_100%] lg:flex-[0_1_340px]"
           >
             <ThisWeekRail />
           </motion.div>
@@ -158,6 +177,7 @@ export default function Page() {
         <FourBands />
         <ClosingBlock onScan={onClosingScan} />
       </main>
+      <SiteFooter />
     </>
   );
 }

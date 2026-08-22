@@ -22,9 +22,9 @@ export interface ClosingBlockProps {
 export function ClosingBlock({ onScan }: ClosingBlockProps) {
   return (
     <section>
-      <Reveal className="mx-auto flex max-w-page flex-wrap items-start gap-8 px-8 pb-[60px] pt-12">
+      <Reveal className="mx-auto flex max-w-page flex-wrap items-start gap-8 px-8 pb-[60px] pt-12 max-[430px]:px-5">
         <RevealItem className="flex flex-1 basis-[480px] flex-col gap-[14px]">
-          <h2 className="m-0 text-[34px] font-bold tracking-[-0.03em]">MID-CONVERSATION RIGHT NOW?</h2>
+          <h2 className="m-0 text-[34px] font-bold tracking-[-0.03em] break-words max-[430px]:text-[24px]">MID-CONVERSATION RIGHT NOW?</h2>
           <p className="m-0 max-w-[620px] text-[17px] leading-[1.6] text-secondary">
             Paste the chat as text and we&rsquo;ll read it for known pressure and payment patterns. Anything we
             find there is labelled as coming from you — we can&rsquo;t independently verify a conversation, and
@@ -33,6 +33,11 @@ export function ClosingBlock({ onScan }: ClosingBlockProps) {
           <Button variant="primary" size="wide" onClick={onScan} className="self-start">
             CHECK A JOB NOW
           </Button>
+          <div className="text-[11px] uppercase tracking-[0.08em] text-muted">
+            <span className="font-semibold text-ink">FREE</span>
+            <span className="px-[6px] text-rule-strong">·</span>
+            No payment required
+          </div>
         </RevealItem>
         <RevealItem className="flex-1 basis-[380px] border border-ink p-5 max-w-[380px]">
           <div className="mb-3 text-[10px] uppercase tracking-[0.16em] text-muted">Sample finding</div>
