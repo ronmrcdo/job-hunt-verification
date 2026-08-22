@@ -68,6 +68,11 @@ services:
       <<: *api-env
       # One var sets both the API and event origins for the SDK client.
       INNGEST_BASE_URL: http://inngest:8288
+      # Puts the SDK in DEV_SERVER mode (no signing/event keys, no signature
+      # verification) to match `inngest dev` above. The client no longer
+      # hardcodes is_production, so this var is what selects the mode —
+      # docker-compose.prod.yml leaves it unset to get CLOUD mode.
+      INNGEST_DEV: "1"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

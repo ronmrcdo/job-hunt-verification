@@ -18,7 +18,19 @@ from fastapi import FastAPI
 from app.worker.functions import handle_failure, handle_requested, handle_sweep
 from app.worker.persistence import Persistence
 
-inngest_client = inngest.Inngest(app_id="job-hunt-verification", is_production=False)
+# Mode is env-driven, NOT hardcoded, so the same image serves dev and prod.
+# Verified in inngest 0.5.19 (client_lib/client.py::_get_mode): with
+# `is_production=None` the SDK falls back to the INNGEST_DEV env var —
+# truthy => DEV_SERVER (no signature verification, dev-server default
+# origins), unset/empty => CLOUD (verifies the X-Inngest-Signature header
+# against INNGEST_SIGNING_KEY and signs events with INNGEST_EVENT_KEY).
+# client_lib/utils.py resolves the server origins from INNGEST_BASE_URL in
+# BOTH modes, so CLOUD mode still points at our self-hosted `inngest start`
+# rather than inngest.com.
+#   dev  → INNGEST_DEV=1        + INNGEST_BASE_URL=http://inngest:8288
+#   prod → INNGEST_DEV unset    + INNGEST_BASE_URL=http://inngest:8288
+#                               + INNGEST_SIGNING_KEY + INNGEST_EVENT_KEY
+inngest_client = inngest.Inngest(app_id="job-hunt-verification")
 
 
 async def _on_run_investigation_failure(ctx: inngest.Context) -> None:

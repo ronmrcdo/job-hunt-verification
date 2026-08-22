@@ -1,6 +1,16 @@
+import os
+
 import pytest
 
-from app.config import settings
+# Must run BEFORE any test module imports `app.worker.app`. That module builds
+# the Inngest client with no explicit mode, so the SDK reads INNGEST_DEV to
+# choose one (see the comment there). Unset => CLOUD mode, and
+# `inngest.fast_api.serve` then raises SigningKeyMissingError at import time.
+# Tests exercise the functions directly, not a real Inngest server, so pin the
+# dev mode here rather than handing the suite a fake signing key.
+os.environ.setdefault("INNGEST_DEV", "1")
+
+from app.config import settings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
