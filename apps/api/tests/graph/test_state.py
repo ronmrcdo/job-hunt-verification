@@ -32,3 +32,8 @@ def test_finding_user_safety_alert_settable():
                 severity="high", claim="c", provenance="web_verified",
                 user_safety_alert=True)
     assert f.user_safety_alert is True
+
+def test_verified_canonical_domain_defaults_none():
+    from app.graph.state import InvestigationState, RawSubmission
+    s = InvestigationState(submission=RawSubmission(job_text="x"))
+    assert s.verified_canonical_domain is None
