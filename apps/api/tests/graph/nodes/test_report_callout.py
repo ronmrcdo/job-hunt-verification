@@ -18,6 +18,15 @@ def test_unverified_callout_is_entity_decoupled():
     assert "hxxps://" in outs[0] or "[.]" in outs[0]   # defanged
 
 
+def test_unverified_redaction_is_case_insensitive():
+    ents = ExtractedEntities(company_name="Acme")
+    outs = build_safety_callouts(
+        [_f("user_provided_unverified",
+            "ACME Corp asks you to log in on a lookalike (https://evil-login.io/login)")], ents)
+    assert outs
+    assert "acme" not in outs[0].lower()
+
+
 def test_web_verified_callout_may_name_company():
     ents = ExtractedEntities(company_name="Acme")
     outs = build_safety_callouts(

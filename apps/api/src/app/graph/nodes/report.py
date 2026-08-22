@@ -20,6 +20,8 @@ URL despite being told not to. The same defanging is applied to
 fetched content (spec §9.2) and can carry a raw URL that must never reach the
 client as a clickable link.
 """
+import re
+
 from pydantic import BaseModel, Field
 
 from app.graph.state import InvestigationState
@@ -87,7 +89,7 @@ def build_safety_callouts(findings, entities) -> list[str]:
         if f.provenance == "user_provided_unverified":
             name = (entities.company_name or "").strip()
             if name:
-                text = text.replace(name, "the employer")
+                text = re.sub(re.escape(name), "the employer", text, flags=re.IGNORECASE)
             outs.append("Safety warning — a posting you submitted asks you to take a risky "
                         f"action. {text} Do not do this before verifying independently.")
         else:
