@@ -221,6 +221,44 @@ async def test_hung_branch_degrades_to_unverifiable_instead_of_hanging(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_raising_branch_degrades_to_unverifiable_instead_of_crashing(monkeypatch):
+    """A branch that RAISES (e.g. the company site is unreachable -> a
+    ConnectionError bubbles out of the node) must not crash the whole
+    investigation. Like the timeout path, it degrades to a soft
+    'unverifiable' finding and the run completes normally. Prior to the
+    branch-guard broadening this raised straight out of the graph."""
+    import asyncio
+
+    async def stub_intake(s): return {"entities": s.entities}
+    async def unreachable_research(s):
+        raise ConnectionError("company site unreachable")
+    async def stub_checks(s): return {"deterministic_signals": {"citation_drops": 0}}
+    async def stub_crosspost(s): return {}
+    async def stub_conversation(s): return {}
+    async def stub_analysis(s): return {}
+    async def stub_advocate(s): return {}
+    async def stub_report(s):
+        return {"assessment": s.assessment.model_copy(update={"summary": "ok"})}
+    monkeypatch.setattr(build, "intake_extraction", stub_intake)
+    monkeypatch.setattr(build, "deterministic_checks_node", stub_checks)
+    monkeypatch.setattr(build, "company_research", unreachable_research)
+    monkeypatch.setattr(build, "job_crosspost_search", stub_crosspost)
+    monkeypatch.setattr(build, "conversation_analysis", stub_conversation)
+    monkeypatch.setattr(build, "analysis", stub_analysis)
+    monkeypatch.setattr(build, "devils_advocate", stub_advocate)
+    monkeypatch.setattr(build, "report_generation", stub_report)
+
+    graph = build.build_graph()
+    result = await asyncio.wait_for(
+        graph.ainvoke(InvestigationState(submission=RawSubmission(job_text="Acme hiring"))),
+        timeout=2.0,
+    )
+    claims = {f.claim for f in result["findings"]}
+    assert any("could not be completed" in c for c in claims)
+    assert result["assessment"].band in ("LOW", "MODERATE", "HIGH", "CRITICAL")
+
+
+@pytest.mark.asyncio
 async def test_run_investigation_persists_via_postgres_checkpointer(monkeypatch):
     """Gated: requires a real Postgres reachable at JHV_TEST_DATABASE_URL.
     Verified against the throwaway PG on host port 5433 (container

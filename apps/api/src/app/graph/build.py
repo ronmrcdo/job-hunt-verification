@@ -47,14 +47,37 @@ def _injection_scan(state: InvestigationState) -> dict:
     return {"findings": state.findings + new} if new else {}
 
 
-def _with_branch_timeout(node, *, name: str, category):
-    """Wraps a fan-out branch node with `settings.branch_timeout_s`. On
-    timeout, degrades to a soft "unverifiable" finding instead of raising —
-    written via the raw_findings/raw_sources reducer channels so a
-    simultaneous timeout on another branch can't collide with it (a
-    non-reducer field would). It carries its own synthetic Source, since
-    citation_validator (3.6) drops any finding that cites no source — this
-    keeps the degraded finding from being silently dropped as uncited."""
+def _with_branch_guard(node, *, name: str, category):
+    """Wraps a fan-out branch node so that neither a timeout nor a raised
+    exception can take down the whole investigation. On timeout (a hung
+    node) OR any exception (e.g. the company site is unreachable and the
+    node raises a ConnectionError), it degrades to a soft "unverifiable"
+    finding instead of hanging or crashing — an unreachable source is
+    honestly "unverifiable", not a system error, so the run continues and
+    reports what it could not confirm (spec §7, §9.4/§12).
+
+    The degraded finding is written via the raw_findings/raw_sources reducer
+    channels so a simultaneous failure on another branch can't collide with
+    it (a non-reducer field would). It carries its own synthetic Source,
+    since citation_validator (3.6) drops any finding that cites no source —
+    this keeps the degraded finding from being silently dropped as uncited."""
+
+    def _degraded(reason: str, *, id_prefix: str, summary: str) -> dict:
+        src_id = f"src_{id_prefix}_{name}"
+        src = Source(
+            id=src_id, url=None, kind="dns", retrieved_at=datetime.now(timezone.utc),
+            content_summary=summary, raw_excerpt=None,
+        )
+        finding = Finding(
+            id=f"{id_prefix}_{name}",
+            category=category,
+            direction="unverifiable",
+            severity="info",
+            claim=f"{reason} — treat as unverifiable, not evidence.",
+            source_ids=[src_id],
+            provenance="deterministic",
+        )
+        return {"raw_sources": [src], "raw_findings": [finding]}
 
     async def wrapped(state: InvestigationState) -> dict:
         try:
@@ -64,23 +87,21 @@ def _with_branch_timeout(node, *, name: str, category):
                 "branch %s exceeded %.1fs timeout — degrading to unverifiable",
                 name, settings.branch_timeout_s,
             )
-            src_id = f"src_timeout_{name}"
-            src = Source(
-                id=src_id, url=None, kind="dns", retrieved_at=datetime.now(timezone.utc),
-                content_summary=f"{name} did not complete within the time budget.",
-                raw_excerpt=None,
+            return _degraded(
+                f"{name} did not complete within the time budget",
+                id_prefix="timeout",
+                summary=f"{name} did not complete within the time budget.",
             )
-            finding = Finding(
-                id=f"timeout_{name}",
-                category=category,
-                direction="unverifiable",
-                severity="info",
-                claim=f"{name} did not complete within the time budget — "
-                      "treat as unverifiable, not evidence.",
-                source_ids=[src_id],
-                provenance="deterministic",
+        except Exception as exc:  # unreachable site, DNS failure, upstream 5xx, etc.
+            logger.warning(
+                "branch %s failed (%s) — degrading to unverifiable",
+                name, type(exc).__name__,
             )
-            return {"raw_sources": [src], "raw_findings": [finding]}
+            return _degraded(
+                f"{name} could not be completed ({type(exc).__name__})",
+                id_prefix="error",
+                summary=f"{name} could not be completed: {type(exc).__name__}.",
+            )
 
     return wrapped
 
@@ -89,13 +110,13 @@ def build_graph(checkpointer=None):
     g = StateGraph(InvestigationState)
     g.add_node("url_fetch", url_fetch_mod.url_fetch)
     g.add_node("intake", intake_extraction)
-    g.add_node("checks", _with_branch_timeout(
+    g.add_node("checks", _with_branch_guard(
         deterministic_checks_node, name="deterministic_checks", category="domain"))
-    g.add_node("research", _with_branch_timeout(
+    g.add_node("research", _with_branch_guard(
         company_research, name="company_research", category="company"))
-    g.add_node("crosspost", _with_branch_timeout(
+    g.add_node("crosspost", _with_branch_guard(
         job_crosspost_search, name="job_crosspost_search", category="job"))
-    g.add_node("conversation", _with_branch_timeout(
+    g.add_node("conversation", _with_branch_guard(
         conversation_analysis, name="conversation_analysis", category="communication"))  # dormant in V0
     g.add_node("evidence", evidence_assembly)
     g.add_node("injection", _injection_scan)
