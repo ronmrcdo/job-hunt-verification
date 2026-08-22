@@ -26,6 +26,15 @@
 }
 
 @layer base {
+  /* In-page anchor jumps (header's "How it works" / "Risk bands") glide
+     instead of teleporting — spatial consistency: the glide shows where the
+     section sits on the page. Scoped to no-preference so reduced-motion users
+     get the instant jump; paired with data-scroll-behavior="smooth" on <html>
+     (layout.tsx) so Next suspends it during SPA route transitions. */
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+
   body { @apply bg-page text-body antialiased; font-family: var(--font-sans); }
 
   /* One crisp, square focus ring across every interactive element — matches
@@ -52,4 +61,64 @@
    resolves regardless of Tailwind's theme keyframes. */
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Footer "Made ♥ by" heart. Rare, ambient, decorative motion (Emil: emotion is
+   allowed where it's seen occasionally and serves warmth, not function) — a
+   real two-thump cardiac beat, not a single symmetric pulse: a quick lub-DUB
+   near the start, then a long diastole rest before the next cycle. transform
+   only, so it stays off the paint path. transform-origin:center keeps it
+   pulsing in place beside the text. */
+@keyframes heartbeat {
+  0%   { transform: scale(1); }
+  8%   { transform: scale(1.28); }
+  16%  { transform: scale(1); }
+  24%  { transform: scale(1.18); }
+  32%  { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+/* Reduced motion: a beating heart is pure decoration, so still it entirely
+   rather than fading — nothing here needs to communicate a state change. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes heartbeat {
+    from, to { transform: none; }
+  }
+}
+
+/* Landing rail live flourishes. Both are rare, ambient, one-shot reveals
+   (fired only when a polled stat actually moves — see ThisWeekRail), so a
+   play-once keyframe fits better than an interruptible transition, and CSS
+   keeps them off the main thread while the page is still settling. Motion is
+   ease-out and the visible entrance is fast (~15% of the run); the long tail
+   is dwell time so a "+1" is readable before it leaves.
+
+   rail-delta: a signed "+N" floats up beside a number and fades out.
+   rail-check: a check by the eyebrow pops in when a new posting lands. */
+@keyframes rail-delta {
+  from { opacity: 0; transform: translateY(4px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 1; transform: translateY(-4px); }
+  to   { opacity: 0; transform: translateY(-8px); }
+}
+@keyframes rail-check {
+  from { opacity: 0; transform: scale(0.8); }
+  30%  { opacity: 1; transform: scale(1); }
+  70%  { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1); }
+}
+
+/* Reduced motion: keep the fade (it still communicates "something changed")
+   but drop every transform so nothing travels or scales. Redefining the
+   keyframes under the media query is enough — the animation still runs to
+   completion, so the JS onAnimationEnd cleanup fires identically. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes rail-delta {
+    from, to { opacity: 0; transform: none; }
+    15%, 70% { opacity: 1; transform: none; }
+  }
+  @keyframes rail-check {
+    from, to { opacity: 0; transform: none; }
+    30%, 70% { opacity: 1; transform: none; }
+  }
 }
