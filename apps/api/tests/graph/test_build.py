@@ -148,7 +148,7 @@ async def test_fanout_branches_do_not_conflict_on_concurrent_writes(monkeypatch)
     from app.graph.nodes import checks_node, crosspost
     from app.tools.tavily import SearchHit
 
-    async def fake_checks(entities, *, today):
+    async def fake_checks(entities, *, today, verified_canonical_domain=None):
         return {"domain_age_days": 900, "mx_valid": True, "email_domain_matches": True,
                 "homoglyph_hit": True, "recruiter_is_ats": False, "url_flags": []}
     monkeypatch.setattr(checks_node, "run_deterministic_checks", fake_checks)

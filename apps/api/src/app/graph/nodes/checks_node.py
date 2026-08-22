@@ -18,7 +18,9 @@ def _src(id_: str, summary: str) -> Source:
 
 
 async def deterministic_checks_node(state: InvestigationState) -> dict:
-    sig = await run_deterministic_checks(state.entities, today=date.today())
+    sig = await run_deterministic_checks(
+        state.entities, today=date.today(),
+        verified_canonical_domain=state.verified_canonical_domain)
     sources: list[Source] = []
     findings: list[Finding] = []
 
@@ -30,7 +32,7 @@ async def deterministic_checks_node(state: InvestigationState) -> dict:
                      f"recruiter_is_ats={sig['recruiter_is_ats']}")
     sources += [domain_src, email_src]
 
-    if sig["homoglyph_hit"]:
+    if sig["homoglyph_hit"] is True:
         findings.append(Finding(
             id="det_homoglyph", category="domain", direction="suspicious", severity="high",
             claim="The contact domain is a lookalike of the company's real domain.",
