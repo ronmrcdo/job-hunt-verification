@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 const publicStats = vi.fn();
@@ -16,6 +16,10 @@ beforeEach(() => {
     findingsWithSourcesPct: 96,
     medianSeconds: 100,
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("ThisWeekRail", () => {
@@ -53,6 +57,31 @@ describe("ThisWeekRail", () => {
     render(<ThisWeekRail />);
     await waitFor(() => expect(screen.getByText("0")).toBeTruthy());
     expect(screen.getAllByText("—")).toHaveLength(2);
+  });
+
+  it("never flashes a delta on the first load — there is no prior value to have moved from", async () => {
+    render(<ThisWeekRail />);
+    await waitFor(() => expect(screen.getByText("4,118")).toBeTruthy());
+    expect(screen.queryByText(/^\+/)).toBeNull();
+    expect(screen.queryByText("✓")).toBeNull();
+  });
+
+  it("flashes a signed delta and a check when a later poll shows growth", async () => {
+    vi.useFakeTimers();
+    try {
+      publicStats
+        .mockResolvedValueOnce({ postingsChecked: 4118, findingsWithSourcesPct: 96, medianSeconds: 100 })
+        .mockResolvedValueOnce({ postingsChecked: 4120, findingsWithSourcesPct: 96, medianSeconds: 100 });
+      render(<ThisWeekRail />);
+      await vi.advanceTimersByTimeAsync(0); // first fetch resolves — no flash
+      expect(screen.queryByText(/^\+/)).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(20_000); // second poll — +2 postings
+      expect(screen.getByText("+2")).toBeTruthy();
+      expect(screen.getByText("✓")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows the exact won't-do copy regardless of the fetch", () => {

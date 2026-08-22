@@ -58,6 +58,29 @@ export function formatPercent(n: number | null): string {
   return n === null ? EM_DASH : `${n}%`;
 }
 
+// The kind of a rail row, so the live "+N" flourish formats a change the same
+// way its base value is formatted: counts group, percents carry a %, durations
+// reuse formatDuration.
+export type StatKind = "count" | "percent" | "duration";
+
+// Signed change label for the rail's live delta flourish. Returns null when
+// there is nothing worth flashing — a flat change, a change that rounds away,
+// or a count that did not grow (postings only ever climb, so a non-positive
+// count delta is noise, never shown). The caller skips rendering on null, so
+// most polls flash nothing and only a real move surfaces.
+export function formatDelta(delta: number, kind: StatKind): string | null {
+  if (kind === "count") {
+    if (delta <= 0) return null;
+    return `+${delta.toLocaleString("en-US")}`;
+  }
+  const rounded = Math.round(delta);
+  if (rounded === 0) return null;
+  const sign = rounded > 0 ? "+" : "-";
+  const magnitude = Math.abs(rounded);
+  if (kind === "percent") return `${sign}${magnitude}%`;
+  return `${sign}${formatDuration(magnitude)}`;
+}
+
 export function formatDuration(seconds: number | null): string {
   if (seconds === null) return EM_DASH;
   const total = Math.round(seconds);

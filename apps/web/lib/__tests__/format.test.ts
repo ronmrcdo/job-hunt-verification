@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatStamp, formatCaseStamp, pad2, formatCount, formatPercent, formatDuration } from "../format";
+import { formatStamp, formatCaseStamp, pad2, formatCount, formatPercent, formatDuration, formatDelta } from "../format";
 
 describe("pad2", () => {
   it("zero-pads a single digit", () => {
@@ -87,5 +87,43 @@ describe("formatDuration", () => {
 
   it("renders an em dash for null", () => {
     expect(formatDuration(null)).toBe("—");
+  });
+});
+
+describe("formatDelta", () => {
+  describe("count", () => {
+    it("renders a grouped, signed increment", () => {
+      expect(formatDelta(3, "count")).toBe("+3");
+      expect(formatDelta(1200, "count")).toBe("+1,200");
+    });
+
+    it("shows nothing for a flat or negative count — postings only grow", () => {
+      expect(formatDelta(0, "count")).toBeNull();
+      expect(formatDelta(-2, "count")).toBeNull();
+    });
+  });
+
+  describe("percent", () => {
+    it("renders a signed point change either direction", () => {
+      expect(formatDelta(2, "percent")).toBe("+2%");
+      expect(formatDelta(-1, "percent")).toBe("-1%");
+    });
+
+    it("shows nothing when the change rounds away", () => {
+      expect(formatDelta(0, "percent")).toBeNull();
+      expect(formatDelta(0.4, "percent")).toBeNull();
+    });
+  });
+
+  describe("duration", () => {
+    it("reuses the duration formatter with a sign", () => {
+      expect(formatDelta(40, "duration")).toBe("+40s");
+      expect(formatDelta(-100, "duration")).toBe("-1m 40s");
+    });
+
+    it("shows nothing when the change rounds to zero", () => {
+      expect(formatDelta(0, "duration")).toBeNull();
+      expect(formatDelta(0.3, "duration")).toBeNull();
+    });
   });
 });
