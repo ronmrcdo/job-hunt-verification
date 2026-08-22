@@ -8,6 +8,11 @@ from app.graph.state import RawSubmission, InvestigationState
 TEST_DB_URL = os.getenv("JHV_TEST_DATABASE_URL")
 
 
+def test_linkscan_branch_in_graph():
+    graph = build.build_graph()
+    assert "linkscan" in graph.get_graph().nodes
+
+
 @pytest.mark.asyncio
 async def test_graph_runs_end_to_end_with_stubbed_nodes(monkeypatch):
     # Stub every LLM/network node so the graph wiring itself is what's tested.

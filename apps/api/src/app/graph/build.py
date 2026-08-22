@@ -30,6 +30,7 @@ from app.graph.nodes.checks_node import deterministic_checks_node
 from app.graph.nodes.research import company_research
 from app.graph.nodes.crosspost import job_crosspost_search
 from app.graph.nodes.conversation import conversation_analysis
+from app.graph.nodes.linkscan_node import linkscan_node
 from app.graph.nodes.evidence import evidence_assembly
 from app.graph.nodes.citation import citation_validator
 from app.graph.nodes.analysis import analysis
@@ -118,6 +119,8 @@ def build_graph(checkpointer=None):
         job_crosspost_search, name="job_crosspost_search", category="job"))
     g.add_node("conversation", _with_branch_guard(
         conversation_analysis, name="conversation_analysis", category="communication"))  # dormant in V0
+    g.add_node("linkscan", _with_branch_guard(
+        linkscan_node, name="weaponized_link_scan", category="communication"))
     g.add_node("evidence", evidence_assembly)
     g.add_node("injection", _injection_scan)
     g.add_node("analysis", analysis)
@@ -129,7 +132,7 @@ def build_graph(checkpointer=None):
 
     g.add_edge(START, "url_fetch")
     g.add_edge("url_fetch", "intake")
-    for branch in ("checks", "research", "crosspost", "conversation"):
+    for branch in ("checks", "research", "crosspost", "conversation", "linkscan"):
         g.add_edge("intake", branch)
         g.add_edge(branch, "evidence")          # fan-in barrier
     g.add_edge("evidence", "injection")
