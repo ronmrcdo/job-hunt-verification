@@ -15,8 +15,9 @@ def test_settings_reads_env(monkeypatch):
     assert s.cheap_reasoning_effort == "low"
     assert s.strong_reasoning_effort == "high"
     assert s.max_job_text_chars == 40_000
-    assert s.fetch_timeout_s == 300.0
-    assert s.branch_timeout_s == 600.0
+    assert s.fetch_timeout_s == 120.0
+    assert s.branch_timeout_s == 180.0
+    assert s.total_deadline_s == 600.0
 
 
 def test_structured_output_method_defaults_to_strict_json_schema():
