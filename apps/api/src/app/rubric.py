@@ -173,6 +173,17 @@ def compute_assessment(state: InvestigationState) -> FinalAssessment:
             and state.entities.company_name:
         band = _cap(band, "MODERATE")
 
+    # Gap B (spec §5): a deterministic signal computed on a user-supplied entity
+    # (domain/email) cannot move a NAMED company's band past MODERATE until
+    # disambiguation (§7) confirms the entity belongs to that company. Without
+    # confirmation, a saboteur's chosen throwaway domain must not defame a real
+    # employer. Only high-severity deterministic findings can breach MODERATE on
+    # their own, so gate on those.
+    ownership_confirmed = bool(signals.get("entity_ownership_confirmed"))
+    high_det = [f for f in deterministic_suspicious if _POINTS[f.severity] >= _POINTS["high"]]
+    if state.entities.company_name and not ownership_confirmed and high_det:
+        band = _cap(band, "MODERATE")
+
     # Rule: a suspicious payment/fee request floors the band at HIGH,
     # regardless of what the rest of the score says. Reachable in V0 via a
     # `job`-category finding (the posting demands the fee directly); the

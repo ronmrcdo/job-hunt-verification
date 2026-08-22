@@ -107,8 +107,11 @@ def test_two_soft_findings_alone_cannot_reach_critical():
 
 def test_deterministic_signal_still_reaches_high():
     # A deterministic-provenance suspicious finding (e.g. homoglyph hit) is
-    # trusted on its own and must not be capped by the soft-only rule.
-    a = compute_assessment(_state([_f("f1", "high", prov="deterministic")]))
+    # trusted on its own and must not be capped by the soft-only rule. Ownership
+    # is confirmed here so the Gap-B precondition (§5/§9.1, task 5.2) doesn't
+    # also cap it -- that rule is exercised separately below.
+    a = compute_assessment(_state([_f("f1", "high", prov="deterministic")],
+                                   signals={"entity_ownership_confirmed": True}))
     assert a.band == "HIGH"
 
 
@@ -249,3 +252,23 @@ def test_user_provided_lookalike_login_capped_moderate_for_named_company():
                 provenance="user_provided_unverified", user_safety_alert=True, source_ids=["src_001"])
     a = compute_assessment(_state([f]))
     assert a.band == "MODERATE"
+
+
+def test_high_severity_deterministic_capped_for_named_company_when_unconfirmed():
+    # Gap B (spec §5/§9.1): a deterministic signal computed on a
+    # user-supplied entity (domain/email) cannot move a NAMED company's band
+    # past MODERATE until disambiguation (§7) confirms the entity belongs to
+    # that company. Without confirmation, a saboteur's throwaway domain must
+    # not defame a real employer.
+    f = Finding(id="det_homoglyph", category="domain", direction="suspicious", severity="high",
+                claim="The contact domain is a lookalike of the company's real domain.",
+                provenance="deterministic", source_ids=["src_det_domain"])
+    a = compute_assessment(_state([f], signals={"entity_ownership_confirmed": False}))
+    assert a.band == "MODERATE"
+
+
+def test_high_severity_deterministic_uncapped_when_ownership_confirmed():
+    f = Finding(id="det_homoglyph", category="domain", direction="suspicious", severity="high",
+                claim="lookalike ...", provenance="deterministic", source_ids=["src_det_domain"])
+    a = compute_assessment(_state([f], signals={"entity_ownership_confirmed": True}))
+    assert a.band in ("HIGH", "CRITICAL")
