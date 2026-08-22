@@ -72,8 +72,6 @@ services:
     logging: *logging
     labels:
       - "traefik.enable=true"
-      - "traefik.http.services.jhv-inngest.loadbalancer.server.port=8288"
-
       - "traefik.http.routers.jhv-inngest-events.rule=Host(`${INNGEST_HOST:-jobeverifai-inngest.ronmrcdo.dev}`) && PathPrefix(`/e/`)"
       - "traefik.http.routers.jhv-inngest-events.priority=100"
       - "traefik.http.routers.jhv-inngest-events.service=jhv-inngest"
