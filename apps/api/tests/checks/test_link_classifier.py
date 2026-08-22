@@ -37,6 +37,10 @@ def test_open_redirect_on_allowlisted_host_is_unknown():
     # embedded absolute URL in query -> never inherits greenhouse.io's neutral class
     assert c("https://greenhouse.io/redirect?url=https://evil-login.com").kind == "unknown"
 
+def test_open_redirect_in_fragment_is_unknown():
+    # embedded absolute URL in fragment -> same guard prevents neutrality
+    assert c("https://greenhouse.io/redirect#url=https://evil-login.com").kind == "unknown"
+
 def test_userinfo_confusion_uses_real_host():
     # real host is evil.com, not greenhouse.io
     r = c("https://greenhouse.io@evil.com/login")
