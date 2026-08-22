@@ -11,11 +11,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submissionSchema, type SubmissionInput } from "../../lib/validation";
-import { createInvestigation, quotaStatus, type QuotaStatus } from "../../lib/investigations";
+import { createInvestigation, quotaStatus, quotaView, type QuotaStatus } from "../../lib/investigations";
 import { createClient } from "../../lib/supabase/client";
 import { TextField } from "../ui/TextField";
 import { TextArea } from "../ui/TextArea";
 import { Button } from "../ui/Button";
+import { QuotaMeter } from "./QuotaMeter";
 import { useFlowOptional } from "../../lib/flow-context";
 
 function resetCopy(resetsAt: string | null, limit: number): string {
@@ -36,10 +37,9 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
       .catch(() => { /* non-blocking: the DB trigger is the real gate */ });
     return () => { active = false; };
   }, []);
-  const weeklyRemaining = quota ? Math.max(quota.weeklyLimit - quota.weeklyUsed, 0) : null;
-  const topUp = quota?.topUpBalance ?? 0;
   // Blocked only when BOTH buckets are empty; a bonus check keeps submit live.
-  const exhausted = quota ? weeklyRemaining === 0 && topUp === 0 : false;
+  // Same derivation the QuotaMeter renders — one source of truth (quotaView).
+  const exhausted = quota ? quotaView(quota).exhausted : false;
   const {
     control,
     handleSubmit,
@@ -107,7 +107,7 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Controller
           name="company_name"
           control={control}
@@ -117,7 +117,6 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
               value={field.value ?? ""}
               onChange={field.onChange}
               placeholder="Acme Global"
-              minWidth="240px"
               autoComplete="organization"
             />
           )}
@@ -132,7 +131,6 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
               onChange={field.onChange}
               placeholder="https://acme-globall.com/careers/va"
               mono
-              minWidth="240px"
             />
           )}
         />
@@ -170,13 +168,7 @@ export function NewCheckForm({ initialJobText }: { initialJobText: string }) {
         </div>
       ) : null}
 
-      {quota ? (
-        <p className="text-[13px] leading-[1.5] text-ink-soft">
-          {weeklyRemaining} of {quota.weeklyLimit} weekly checks left
-          {quota.resetsAt ? ` · resets ${new Date(quota.resetsAt).toLocaleDateString()}` : ""}
-          {topUp > 0 ? ` · +${topUp} bonus checks` : ""}
-        </p>
-      ) : null}
+      {quota ? <QuotaMeter quota={quota} /> : null}
 
       <div className="flex flex-wrap gap-3">
         <div className="flex flex-1 basis-[320px] items-stretch border border-ink">

@@ -79,6 +79,23 @@ export type QuotaStatus = {
   topUpBalance: number;
 };
 
+/**
+ * Shared derivation of what a QuotaStatus means for the UI: how many weekly
+ * checks remain, the bonus (top-up) balance, and whether BOTH buckets are
+ * empty — the only state that blocks a new check, since a bonus check keeps
+ * submit live. One source of truth for the form's submit gate and the
+ * QuotaMeter's display so "exhausted" can't drift between them.
+ */
+export function quotaView(quota: QuotaStatus): {
+  weeklyRemaining: number;
+  topUp: number;
+  exhausted: boolean;
+} {
+  const weeklyRemaining = Math.max(quota.weeklyLimit - quota.weeklyUsed, 0);
+  const topUp = quota.topUpBalance ?? 0;
+  return { weeklyRemaining, topUp, exhausted: weeklyRemaining === 0 && topUp === 0 };
+}
+
 export async function quotaStatus(client: Client): Promise<QuotaStatus> {
   // `quota_status` is a DB RPC not present in the hand-authored Database types;
   // cast narrowly (same pattern as the `as unknown as` casts elsewhere here).

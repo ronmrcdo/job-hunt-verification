@@ -4,7 +4,10 @@ import userEvent from "@testing-library/user-event";
 
 const createInvestigation = vi.fn();
 const quotaStatus = vi.fn();
-vi.mock("../../../lib/investigations", () => ({
+vi.mock("../../../lib/investigations", async (importActual) => ({
+  // `quotaView` is a pure derivation — keep the real one so the submit gate
+  // and QuotaMeter stay under test; only the async data/side-effect fns are mocked.
+  ...(await importActual<typeof import("../../../lib/investigations")>()),
   createInvestigation: (...a: any) => createInvestigation(...a),
   quotaStatus: (...a: any) => quotaStatus(...a),
 }));
