@@ -10,7 +10,7 @@
 #   • target `build`: internal — compiles the app. Not run directly.
 #   • target `prod` (default): the shippable image. Carries ONLY the traced
 #     standalone server + static assets — no pnpm, no devDependencies, no
-#     source tree. Runs as the unprivileged `node` user.
+#     source tree. Runs as the unprivileged `node` user and declares no EXPOSE.
 # With no --target, the last stage (`prod`) wins, so bare `docker build` still
 # yields the shippable image.
 
@@ -59,7 +59,10 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 USER node
-EXPOSE 3000
+# Deliberately no EXPOSE: nothing publishes this port in production. Traefik
+# reaches the container over the shared network and is told the port outright
+# (traefik.http.services.jhv-web.loadbalancer.server.port in
+# docker-compose.prod.yml) — keep that label in sync with PORT above.
 # node:22-slim ships no curl/wget, so probe with node's built-in fetch.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

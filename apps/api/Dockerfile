@@ -76,5 +76,10 @@ USER appuser
 # healthcheck in docker-compose.prod.yml.
 
 # Default = the Inngest worker; compose overrides for the V0 HTTP API.
-EXPOSE 8000
+#
+# Deliberately no EXPOSE: it would be a lie half the time — this image serves
+# two entrypoints on two different ports (worker :8000, app.main :8080), and
+# nothing reads the metadata anyway. Dev publishes ports explicitly in
+# docker-compose.yml; production publishes none and tells Traefik the port
+# outright (traefik.http.services.jhv-worker.loadbalancer.server.port).
 CMD ["uvicorn", "app.worker.app:app", "--host", "0.0.0.0", "--port", "8000"]
