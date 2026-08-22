@@ -122,3 +122,67 @@ async def test_off_target_hit_excluded_from_sources(monkeypatch):
                               entities=ExtractedEntities(company_name="Acme Global", company_domain="acmeglobal.com"))
     out = await research.company_research(state)
     assert out["raw_sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_research_confirms_domain_when_relevant_source_matches(monkeypatch):
+    # spec §9.7 Gap A: a relevant source whose page host registrable-matches
+    # the submitted company_domain confirms it as the web-verified canonical
+    # domain (only research sets this scalar).
+    async def fake_search(query, *, max_results=5):
+        return [SearchHit(title="Acme Careers", url="https://acme.com/jobs", content="hiring")]
+    async def fake_fetch(url, *, max_bytes=2_000_000):
+        return FetchResult(url=url, ok=True, status=200, text="Acme is a real SaaS company.")
+    async def fake_call(model, schema, messages, *, node):
+        return schema(summary="Acme appears to be an established SaaS company.",
+                      relevant=True), NodeUsage(node=node, model="cheap", usd=0.001)
+    monkeypatch.setattr(research, "tavily_search", fake_search)
+    monkeypatch.setattr(research, "safe_fetch", fake_fetch)
+    monkeypatch.setattr(research, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+                              entities=ExtractedEntities(company_name="Acme", company_domain="acme.com"))
+    out = await research.company_research(state)
+    assert out["verified_canonical_domain"] == "acme.com"
+
+
+@pytest.mark.asyncio
+async def test_research_does_not_confirm_domain_from_off_target_hit(monkeypatch):
+    # A same-named-but-different entity (relevant=False, dropped as evidence)
+    # must not confirm the domain -- conservative rule.
+    async def fake_search(query, *, max_results=5):
+        return [SearchHit(title="Acme Global (unrelated)", url="https://acme-global.example/about", content="hi")]
+    async def fake_fetch(url, *, max_bytes=2_000_000):
+        return FetchResult(url=url, ok=True, status=200, text="Acme Global is a bakery in a different country.")
+    async def fake_call(model, schema, messages, *, node):
+        return schema(summary="This page describes an unrelated bakery, not the target company.",
+                      relevant=False), NodeUsage(node=node, model="cheap", usd=0.001)
+    monkeypatch.setattr(research, "tavily_search", fake_search)
+    monkeypatch.setattr(research, "safe_fetch", fake_fetch)
+    monkeypatch.setattr(research, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+                              entities=ExtractedEntities(company_name="Acme Global", company_domain="acmeglobal.com"))
+    out = await research.company_research(state)
+    assert out["verified_canonical_domain"] is None
+
+
+@pytest.mark.asyncio
+async def test_research_does_not_confirm_domain_when_no_source_host_matches(monkeypatch):
+    # A relevant source that just doesn't happen to be hosted on the claimed
+    # domain must not confirm it either.
+    async def fake_search(query, *, max_results=5):
+        return [SearchHit(title="Acme mentioned in news", url="https://news.example/acme-story", content="news")]
+    async def fake_fetch(url, *, max_bytes=2_000_000):
+        return FetchResult(url=url, ok=True, status=200, text="Acme is a real SaaS company, per this news site.")
+    async def fake_call(model, schema, messages, *, node):
+        return schema(summary="News coverage of Acme, a SaaS company.",
+                      relevant=True), NodeUsage(node=node, model="cheap", usd=0.001)
+    monkeypatch.setattr(research, "tavily_search", fake_search)
+    monkeypatch.setattr(research, "safe_fetch", fake_fetch)
+    monkeypatch.setattr(research, "structured_call", fake_call)
+
+    state = InvestigationState(submission=RawSubmission(job_text="x"),
+                              entities=ExtractedEntities(company_name="Acme", company_domain="acme.com"))
+    out = await research.company_research(state)
+    assert out["verified_canonical_domain"] is None

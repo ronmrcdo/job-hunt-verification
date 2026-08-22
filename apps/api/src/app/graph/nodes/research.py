@@ -20,9 +20,11 @@ verification.
 import asyncio
 import logging
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
+from app.checks.domain_match import registrable_suffix_match
 from app.config import settings
 from app.graph.state import ExtractedEntities, InvestigationState, Source
 from app.tools.tavily import tavily_search, build_company_queries
@@ -76,6 +78,22 @@ async def _summarize_hit(hit, model, entities: ExtractedEntities) -> tuple[Sourc
     return src, usage
 
 
+def _confirm_canonical(entities: ExtractedEntities, sources: list[Source]) -> str | None:
+    """spec §9.7 Gap A: confirm `company_domain` as web-verified ONLY when a
+    relevant (i.e. already on-target, see module docstring) source's page
+    host registrable-matches it. A same-named-but-different entity's source
+    was already dropped as `relevant=False` and never reaches here, so it
+    cannot confirm -- conservative by construction, not by an extra check."""
+    dom = (entities.company_domain or "").lower() or None
+    if not dom:
+        return None
+    for s in sources:
+        host = (urlsplit(s.url).hostname or "").lower() if s.url else ""
+        if host and registrable_suffix_match(host, dom):
+            return dom
+    return None
+
+
 async def company_research(state: InvestigationState) -> dict:
     queries = build_company_queries(state.entities)
     hit_lists = await asyncio.gather(
@@ -122,4 +140,9 @@ async def company_research(state: InvestigationState) -> dict:
             got_any = True
     if not got_any:
         unresolved.append("Could not retrieve independent web evidence about the company — research incomplete.")
-    return {"raw_sources": sources, "cost_events": cost, "unresolved_questions": unresolved}
+    return {
+        "raw_sources": sources,
+        "cost_events": cost,
+        "unresolved_questions": unresolved,
+        "verified_canonical_domain": _confirm_canonical(state.entities, sources),
+    }
