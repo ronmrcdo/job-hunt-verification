@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     structured_output_method: str = "json_schema"
     structured_output_strict: bool = True
 
-    fetch_timeout_s: float = 300.0
+    fetch_timeout_s: float = 120.0  # 2 min per HTTP fetch, comfortably under branch_timeout_s (180s)
     max_job_text_chars: int = 40_000
     max_fetched_posting_chars: int = 40_000  # cap on url_fetch page text (mirrors max_job_text_chars)
-    branch_timeout_s: float = 600.0
+    branch_timeout_s: float = 180.0  # 3 min per fan-out branch, then degrade to unverifiable
     # Per LLM call: bound it so a stalled/slow model can't hang a branch, and
     # don't retry (a hung call would otherwise multiply). Kept comfortably
     # under branch_timeout_s.
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # single-slot local LLM (llama.cpp) into serialized minutes.
     research_max_pages: int = 5
     research_concurrency: int = 3
-    total_deadline_s: float = 1200.0
+    total_deadline_s: float = 600.0  # 10 min soft deadline for the whole investigation
     stale_queued_threshold_s: float = 900.0
     # running rows older than this since creation are treated as zombies —
     # comfortably beyond total_deadline_s + dispatch latency so a legit
