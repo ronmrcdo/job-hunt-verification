@@ -316,6 +316,7 @@
     "expected_band": "LOW",
     "expected_max_band": "MODERATE",
     "expect_safety_callout": false,
+    "expect_unknown_link_finding": true,
     "tags": ["open_redirect"],
     "v1_only": false
   },

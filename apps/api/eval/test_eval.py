@@ -98,6 +98,23 @@ async def test_case_safety_callouts(case, eval_runner):
             f"[{MODEL_CONFIG}] {case['id']}: expected no link-scan finding, got "
             f"{[f.claim for f in link_findings]}"
         )
+    if case.get("expect_unknown_link_finding"):
+        # Proves the open-redirect shape is NOT laundered through the ATS
+        # allowlist into silent clearance: a soft `unknown` finding (no
+        # user_safety_alert) must actually be present, not merely absent of a
+        # callout -- `expect_safety_callout: false` alone can't distinguish a
+        # correct soft-unknown finding from an incorrect false-clearance
+        # (no finding at all), since both produce zero callouts.
+        link_findings = [f for f in state.findings if f.id.startswith("linkscan")]
+        assert link_findings, (
+            f"[{MODEL_CONFIG}] {case['id']}: expected a soft `unknown` link-scan "
+            "finding (the open-redirect shape must not be cleared as neutral), "
+            "but no linkscan finding was present in state.findings at all"
+        )
+        assert all(f.user_safety_alert is False for f in link_findings), (
+            f"[{MODEL_CONFIG}] {case['id']}: expected the link-scan finding(s) to be "
+            f"soft (user_safety_alert=False), got {[(f.id, f.user_safety_alert) for f in link_findings]}"
+        )
 
 
 @pytest.mark.asyncio
