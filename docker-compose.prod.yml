@@ -72,6 +72,10 @@ services:
     logging: *logging
     labels:
       - "traefik.enable=true"
+      # Required, not optional: the inngest image declares no EXPOSE, so Traefik
+      # has no single port to infer and would fall back to :80.
+      - "traefik.http.services.jhv-inngest.loadbalancer.server.port=8288"
+
       - "traefik.http.routers.jhv-inngest-events.rule=Host(`${INNGEST_HOST:-jobeverifai-inngest.ronmrcdo.dev}`) && PathPrefix(`/e/`)"
       - "traefik.http.routers.jhv-inngest-events.priority=100"
       - "traefik.http.routers.jhv-inngest-events.service=jhv-inngest"
@@ -145,6 +149,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jhv-worker.rule=Host(`${WORKER_HOST:-jobeverifai-worker.ronmrcdo.dev}`)"
+      - "traefik.http.services.jhv-worker.loadbalancer.server.port=8000"
 
   web:
     build:
@@ -164,6 +169,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jhv-web.rule=Host(`${WEB_HOST:-jobeverifai.ronmrcdo.dev}`)"
+      - "traefik.http.services.jhv-web.loadbalancer.server.port=3000"
 
 networks:
   coolify:
