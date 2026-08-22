@@ -7,7 +7,7 @@ closes). Every decision is made on the parsed registrable domain of the link's
 cannot pin down is `unknown`, never neutral.
 """
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
 import re
 import tldextract
 
@@ -35,7 +35,22 @@ EXECUTABLE_EXTS = (".apk", ".exe", ".dmg", ".scr", ".msi", ".jar",
 DANGEROUS_SCHEMES = frozenset({"data", "blob", "javascript", "vbscript", "file"})
 
 _EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
+# Open-redirect shapes in query/fragment. URL-decoded first so percent-encoded
+# payloads (`url=https%3A%2F%2Fevil.example`) don't launder through (F5a):
+#   - an embedded absolute URL (`http(s)://...`)
+#   - a scheme-relative redirect target (`url=//evil.example`, `next=//evil.example`)
+#     — a redirect-style param immediately carrying `//host.tld`. The `[?&=]`
+#     anchor + required `.` in the host avoids matching benign path-like `//`.
 _EMBEDDED_URL = re.compile(r"https?://", re.I)
+_SCHEME_RELATIVE_REDIRECT = re.compile(r"[?&=]//?[a-z0-9.-]+\.", re.I)
+
+
+def _has_embedded_redirect(query: str, fragment: str) -> bool:
+    for part in (query, fragment):
+        decoded = unquote(part or "")
+        if _EMBEDDED_URL.search(decoded) or _SCHEME_RELATIVE_REDIRECT.search(decoded):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -76,7 +91,7 @@ def classify_link(url: str, *, canonical_domain: str | None, canonical_verified:
 
     # Open-redirect shape: an embedded absolute URL in query/fragment. The link
     # may bounce off a neutral host to anywhere; refuse to grant it neutrality.
-    if _EMBEDDED_URL.search(parts.query or "") or _EMBEDDED_URL.search(parts.fragment or ""):
+    if _has_embedded_redirect(parts.query or "", parts.fragment or ""):
         return LinkClass("unknown", False, host)
 
     # Shorteners hide their true destination; never neutral, never a hit.

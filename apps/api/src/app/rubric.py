@@ -7,9 +7,11 @@ No LLM or network involvement. Encodes every §5 rule as code:
    cannot move the result past MODERATE.
 2. Payment-floor: a suspicious communication *or* job finding naming a
    payment/fee marker floors the band at HIGH.
-3. user_provided_unverified cap: if the only suspicious findings are user-provided
-   and unverified, a named company cannot be pushed past MODERATE (spec §9.1
-   sabotage defense).
+3. Named-company sabotage cap (spec §9.1/§5 Gap B, unified): for a named company
+   whose ownership of the submitted entity is unconfirmed, only a web_verified
+   suspicious finding may breach MODERATE — deterministic signals on the
+   user-supplied entity and user_provided_unverified findings (both attacker-
+   controlled) cannot. The payment/credential floors still override to HIGH.
 4. Confidence = coverage: confidence is derived from the fraction of entity
    categories with >=1 source-backed finding, never self-reported by the LLM.
 5. Bands only: the public output is Band + Confidence + summary; no percentage or
@@ -166,23 +168,24 @@ def compute_assessment(state: InvestigationState) -> FinalAssessment:
     if band == "CRITICAL" and not deterministic_suspicious and not payment_floor_triggered:
         band = _cap(band, "HIGH")
 
-    # Rule: user_provided_unverified findings alone cannot push a NAMED company
-    # past MODERATE (spec §9.1 sabotage defense: a candidate can't get their own
-    # honest employer scored CRITICAL just by asserting scam claims).
-    if suspicious and all(f.provenance == "user_provided_unverified" for f in suspicious) \
-            and state.entities.company_name:
-        band = _cap(band, "MODERATE")
-
-    # Gap B (spec §5): a deterministic signal computed on a user-supplied entity
-    # (domain/email) cannot move a NAMED company's band past MODERATE until
-    # disambiguation (§7) confirms the entity belongs to that company. Without
-    # confirmation, a saboteur's chosen throwaway domain must not defame a real
-    # employer. Only high-severity deterministic findings can breach MODERATE on
-    # their own, so gate on those.
+    # Unified named-company sabotage cap (spec §9.1/§5 Gap B). Subsumes the two
+    # former caps (the all-user_provided_unverified cap and the high-severity
+    # deterministic Gap-B cap), which had a joint bypass: a saboteur pairing a
+    # real company_name with a throwaway domain (LOW deterministic finding) and
+    # a pasted off-domain login link (HIGH user_provided_unverified) broke the
+    # "all-upv" condition AND escaped the high-severity deterministic gate, so
+    # neither old cap fired and a named company got banded HIGH from pure
+    # attacker input. Rule: for a NAMED company whose ownership of the submitted
+    # entity is not yet confirmed, only a WEB-VERIFIED suspicious finding may
+    # breach MODERATE. Deterministic signals on the user-supplied entity and
+    # user_provided_unverified findings cannot — a saboteur controls both. The
+    # payment/credential floors below still apply and can raise to HIGH.
     ownership_confirmed = bool(signals.get("entity_ownership_confirmed"))
-    high_det = [f for f in deterministic_suspicious if _POINTS[f.severity] >= _POINTS["high"]]
-    if state.entities.company_name and not ownership_confirmed and high_det:
-        band = _cap(band, "MODERATE")
+    if state.entities.company_name and not ownership_confirmed:
+        trusted = any(f.direction == "suspicious" and f.provenance == "web_verified"
+                      for f in findings)
+        if not trusted:
+            band = _cap(band, "MODERATE")
 
     # Rule: a suspicious payment/fee request floors the band at HIGH,
     # regardless of what the rest of the score says. Reachable in V0 via a

@@ -50,6 +50,48 @@ async def test_graph_runs_end_to_end_with_stubbed_nodes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_research_confirmed_domain_visible_to_linkscan(monkeypatch):
+    """C1/F1 regression: research writes verified_canonical_domain and it must
+    be visible to the downstream linkscan (and checks) run. A login link on the
+    company's OWN verified domain then classifies as own_domain (neutral) with
+    NO finding — proving the ref reached linkscan (were it None, own_domain
+    would fail and the link would surface as an off_domain HIGH safety alert).
+    linkscan_node runs FOR REAL here; only the LLM/network nodes are stubbed."""
+    from app.graph.state import ExtractedEntities
+
+    async def stub_intake(s):
+        return {"entities": ExtractedEntities(company_name="Acme", company_domain="acme.com")}
+    async def stub_research(s):
+        return {"verified_canonical_domain": "acme.com"}
+    async def stub_checks(s): return {"deterministic_signals": {"citation_drops": 0}}
+    async def stub_crosspost(s): return {}
+    async def stub_conversation(s): return {}
+    async def stub_analysis(s): return {}
+    async def stub_advocate(s): return {}
+    async def stub_report(s):
+        return {"assessment": s.assessment.model_copy(update={"summary": "ok"})}
+    monkeypatch.setattr(build, "intake_extraction", stub_intake)
+    monkeypatch.setattr(build, "company_research", stub_research)
+    monkeypatch.setattr(build, "deterministic_checks_node", stub_checks)
+    monkeypatch.setattr(build, "job_crosspost_search", stub_crosspost)
+    monkeypatch.setattr(build, "conversation_analysis", stub_conversation)
+    monkeypatch.setattr(build, "analysis", stub_analysis)
+    monkeypatch.setattr(build, "devils_advocate", stub_advocate)
+    monkeypatch.setattr(build, "report_generation", stub_report)
+    # deliberately leave linkscan_node real
+
+    graph = build.build_graph()
+    result = await graph.ainvoke(InvestigationState(submission=RawSubmission(
+        job_text="Welcome aboard. Log in to onboard here: https://acme.com/login before day one.",
+        company_name="Acme")))
+    link_findings = [f for f in result["findings"] if f.id.startswith("linkscan")]
+    assert not link_findings, (
+        "own-domain login link must classify as own_domain (neutral) — proving "
+        f"research's verified_canonical_domain reached linkscan; got {[f.claim for f in link_findings]}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_url_fetch_runs_before_intake_and_feeds_entities(monkeypatch):
     # A link-only submission (empty job_text) fetches the page, and intake
     # extracts the company from the fetched text — proving url_fetch runs

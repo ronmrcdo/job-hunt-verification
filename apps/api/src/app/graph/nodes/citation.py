@@ -25,7 +25,13 @@ def citation_validator(state: InvestigationState) -> dict:
         if not cited:
             drops += 1
             continue
-        if f.provenance == "deterministic":
+        # Deterministic and linkscan findings are deterministically grounded:
+        # the scanner extracted the URL from the real, full posting text, so a
+        # token-overlap check against the (2000-char-capped) `src_det_posting`
+        # excerpt would wrongly drop a safety finding whose URL sits past the
+        # cap after filler padding (F4). They still require a resolving
+        # source_id (checked above), just not token overlap.
+        if f.provenance == "deterministic" or f.id.startswith("linkscan"):
             survivors.append(f)
             continue
         claim_tokens = _tokens(f.claim) - entity_tokens

@@ -121,7 +121,12 @@ def build_graph(checkpointer=None):
         conversation_analysis, name="conversation_analysis", category="communication"))  # dormant in V0
     g.add_node("linkscan", _with_branch_guard(
         linkscan_node, name="weaponized_link_scan", category="communication"))
-    g.add_node("evidence", evidence_assembly)
+    # defer=True: evidence is the fan-in barrier for an UNEVEN join — crosspost
+    # and conversation reach it in one hop off intake, while checks and linkscan
+    # reach it in two hops (via research, per C1/F1 ordering). Deferring makes
+    # evidence run only once every pending upstream branch has drained, instead
+    # of misfiring early / twice on the shorter branches.
+    g.add_node("evidence", evidence_assembly, defer=True)
     g.add_node("injection", _injection_scan)
     g.add_node("analysis", analysis)
     g.add_node("citation", citation_validator)
@@ -132,8 +137,19 @@ def build_graph(checkpointer=None):
 
     g.add_edge(START, "url_fetch")
     g.add_edge("url_fetch", "intake")
+    # research must confirm verified_canonical_domain BEFORE checks and linkscan
+    # read it (C1/F1). If they fan out as siblings of research they always see
+    # None, killing the §7 homoglyph check, making the §5 credential floor
+    # unreachable, and turning a login/download link on the company's OWN
+    # verified domain into an off_domain HIGH user_safety_alert (a §10 false
+    # positive). intake -> research -> {checks, linkscan}; crosspost and
+    # conversation stay parallel off intake.
+    g.add_edge("intake", "research")
+    g.add_edge("research", "checks")
+    g.add_edge("research", "linkscan")
+    g.add_edge("intake", "crosspost")
+    g.add_edge("intake", "conversation")
     for branch in ("checks", "research", "crosspost", "conversation", "linkscan"):
-        g.add_edge("intake", branch)
         g.add_edge(branch, "evidence")          # fan-in barrier
     g.add_edge("evidence", "injection")
     g.add_edge("injection", "analysis")
