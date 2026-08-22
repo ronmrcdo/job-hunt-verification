@@ -9,6 +9,11 @@ BUDGET_ALERT_USD = 0.30
 PRICES: dict[str, dict] = {
     "luna":  {"in": 0.20, "cached": 0.02, "out": 1.20},
     "terra": {"in": 2.00, "cached": 0.20, "out": 12.00},
+    # DeepSeek v4 (the active deployment). Published per-1M-token USD tiers;
+    # override via COST_PRICES_JSON. The two ids are disjoint substrings, so
+    # first-match order in _price_for doesn't matter here.
+    "deepseek-v4-flash": {"in": 0.27, "cached": 0.07, "out": 1.10},
+    "deepseek-v4-pro":   {"in": 0.55, "cached": 0.14, "out": 2.19},
 }
 if os.getenv("COST_PRICES_JSON"):
     PRICES.update(json.loads(os.environ["COST_PRICES_JSON"]))

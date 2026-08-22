@@ -17,6 +17,15 @@ def test_cached_tokens_billed_cheaper(monkeypatch):
     assert round(u.usd, 4) == 0.02
     assert u.cached_input_tokens == 1_000_000
 
+def test_deepseek_models_priced_nonzero():
+    # The active deployment runs DeepSeek v4 ids; they must resolve to a real
+    # rate out of the box (regression: PRICES only knew luna/terra → all $0).
+    for model in ("deepseek-v4-flash", "deepseek-v4-pro"):
+        u = price_usage("analysis", model,
+                        {"input_tokens": 1_000_000, "output_tokens": 1_000_000,
+                         "input_token_details": {"cache_read": 0}})
+        assert u.usd > 0.0, model
+
 def test_unknown_model_is_zero_cost():
     u = price_usage("analysis", "mystery-model-9",
                     {"input_tokens": 5000, "output_tokens": 5000})
