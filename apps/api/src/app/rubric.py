@@ -58,6 +58,20 @@ def _is_payment_finding(f: Finding) -> bool:
             and any(m in f.claim.lower() for m in PAYMENT_MARKERS))
 
 
+CREDENTIAL_LOOKALIKE_MARKERS = ("lookalike", )
+
+
+def _is_credential_lookalike_floor(f: Finding) -> bool:
+    # Floor only for a *verified*-reference lookalike login ask (spec §5/S5).
+    # user_provided_unverified lookalikes are handled by the §9.1 cap above,
+    # never the floor.
+    return (f.provenance == "web_verified"
+            and f.user_safety_alert
+            and f.direction == "suspicious"
+            and "log in" in f.claim.lower()
+            and any(m in f.claim.lower() for m in CREDENTIAL_LOOKALIKE_MARKERS))
+
+
 def score_findings(findings: list[Finding], signals: dict) -> float:
     """Total suspicion score. Deterministic; no LLM self-reporting.
 
@@ -164,6 +178,15 @@ def compute_assessment(state: InvestigationState) -> FinalAssessment:
     # `job`-category finding (the posting demands the fee directly); the
     # `communication` path activates with conversation paste in V1.
     if any(_is_payment_finding(f) for f in findings):
+        band = _floor(band, "HIGH")
+
+    # Rule (spec §5/S5): a web-verified finding that the posting directs the
+    # candidate to log in on a credential-lookalike of the company's real
+    # domain floors the band at HIGH. Verified-only by design: a
+    # user_provided_unverified lookalike claim is left to the §9.1 cap above
+    # instead, so a candidate can't sabotage-float a named employer to HIGH
+    # just by asserting one.
+    if any(_is_credential_lookalike_floor(f) for f in findings):
         band = _floor(band, "HIGH")
 
     coverage = _coverage(findings)

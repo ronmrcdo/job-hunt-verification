@@ -227,3 +227,25 @@ def test_payment_floor_outranks_the_sabotage_cap():
            claim="The posting requires a $200 training fee before onboarding"),
     ], company="Acme"))
     assert a.band == "HIGH"
+
+
+def test_web_verified_lookalike_login_floors_high():
+    # spec §5/S5: a web-verified finding that the posting asks the candidate to
+    # log in on a credential-lookalike domain floors the band at HIGH, even if
+    # the rest of the score alone wouldn't reach it.
+    f = Finding(id="l", category="communication", direction="suspicious", severity="high",
+                claim="The posting asks you to log in on a lookalike of the company's verified domain (x).",
+                provenance="web_verified", user_safety_alert=True, source_ids=["src_001"])
+    a = compute_assessment(_state([f]))
+    assert a.band in ("HIGH", "CRITICAL")
+
+
+def test_user_provided_lookalike_login_capped_moderate_for_named_company():
+    # Same claim shape but user_provided_unverified: the credential-lookalike
+    # floor must NOT fire here -- only the §9.1 unverified cap applies, so a
+    # named company stays capped at MODERATE.
+    f = Finding(id="l", category="communication", direction="suspicious", severity="high",
+                claim="The posting asks you to log in on a lookalike ... (x).",
+                provenance="user_provided_unverified", user_safety_alert=True, source_ids=["src_001"])
+    a = compute_assessment(_state([f]))
+    assert a.band == "MODERATE"
