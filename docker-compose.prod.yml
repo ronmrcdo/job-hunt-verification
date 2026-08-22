@@ -8,17 +8,19 @@ name: job-hunt-verification-prod
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 #
 # Differences from dev, deliberately:
-#   • Inngest runs `inngest start` (CLOUD mode, signing + event keys required,
-#     durable Postgres + Redis) instead of the ephemeral `inngest dev`.
 #   • No source bind mounts, no --reload — the images are the artifact.
 #   • Nothing publishes host ports; Traefik fronts everything over the shared
 #     external coolify network.
 #   • MailHog and llama.cpp are absent by design (dev-only conveniences).
 #
-# What is NOT in this file: Postgres/Auth/Storage for the application itself.
-# Production points at a managed or separately-hosted Supabase project via
-# DATABASE_URL / NEXT_PUBLIC_SUPABASE_*. The Postgres + Redis below belong to
-# Inngest alone (its own run state and queue) and are not the app database.
+# What is NOT in this file:
+#   • Inngest. It is deployed as its own Coolify pod (its own `inngest start`
+#     server + whatever state backend it needs). This stack only points at it:
+#     api-worker sends events to INNGEST_BASE_URL, and that Inngest server must
+#     be configured to reach api-worker back at http://<worker>/api/inngest.
+#   • Postgres/Auth/Storage for the application itself. Production points at a
+#     managed or separately-hosted Supabase project via DATABASE_URL /
+#     NEXT_PUBLIC_SUPABASE_*.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Shared env for the Python services (same image, different command).
@@ -52,73 +54,6 @@ x-logging: &logging
     max-file: "5"
 
 services:
-  inngest:
-    image: inngest/inngest:v1.43.0
-    restart: unless-stopped
-    command: >
-      inngest start
-      -u http://api-worker:8000/api/inngest
-    environment:
-      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required (openssl rand -hex 32)}
-      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required (openssl rand -hex 32)}
-      INNGEST_POSTGRES_URI: postgres://inngest:${INNGEST_POSTGRES_PASSWORD:?INNGEST_POSTGRES_PASSWORD is required}@inngest-postgres:5432/inngest?sslmode=disable
-      INNGEST_REDIS_URI: redis://inngest-redis:6379
-    depends_on:
-      inngest-postgres:
-        condition: service_healthy
-      inngest-redis:
-        condition: service_healthy
-    networks: [internal, coolify]
-    logging: *logging
-    labels:
-      - "traefik.enable=true"
-      # Required, not optional: the inngest image declares no EXPOSE, so Traefik
-      # has no single port to infer and would fall back to :80.
-      - "traefik.http.services.jhv-inngest.loadbalancer.server.port=8288"
-
-      - "traefik.http.routers.jhv-inngest-events.rule=Host(`${INNGEST_HOST:-jobeverifai-inngest.ronmrcdo.dev}`) && PathPrefix(`/e/`)"
-      - "traefik.http.routers.jhv-inngest-events.priority=100"
-      - "traefik.http.routers.jhv-inngest-events.service=jhv-inngest"
-
-      - "traefik.http.routers.jhv-inngest.rule=Host(`${INNGEST_HOST:-jobeverifai-inngest.ronmrcdo.dev}`)"
-      - "traefik.http.routers.jhv-inngest.priority=1"
-      - "traefik.http.routers.jhv-inngest.service=jhv-inngest"
-      - "traefik.http.routers.jhv-inngest.middlewares=jhv-inngest-auth"
-      - "traefik.http.middlewares.jhv-inngest-auth.basicauth.users=${INNGEST_BASICAUTH_USERS:?INNGEST_BASICAUTH_USERS is required (docker run --rm httpd:alpine htpasswd -nbB admin '<password>')}"
-
-  inngest-postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: inngest
-      POSTGRES_PASSWORD: ${INNGEST_POSTGRES_PASSWORD:?INNGEST_POSTGRES_PASSWORD is required}
-      POSTGRES_DB: inngest
-    volumes:
-      - inngest-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U inngest -d inngest"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks: [internal]
-    logging: *logging
-
-  inngest-redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - inngest-redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks: [internal]
-    logging: *logging
-
   api-worker:
     build:
       context: ./apps/api
@@ -135,7 +70,9 @@ services:
       - ./supabase:/workspace/supabase:ro
     environment:
       <<: *api-env
-      INNGEST_BASE_URL: http://inngest:8288
+      # Inngest runs as its own Coolify pod. Point this at that server's URL
+      # (its /e/ event endpoint), e.g. https://jobeverifai-inngest.ronmrcdo.dev.
+      INNGEST_BASE_URL: ${INNGEST_BASE_URL:?INNGEST_BASE_URL is required (URL of the separately-deployed Inngest server)}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required}
     healthcheck:
@@ -144,7 +81,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-    networks: [internal, coolify]
+    networks: [coolify]
     logging: *logging
     labels:
       - "traefik.enable=true"
@@ -174,9 +111,3 @@ services:
 networks:
   coolify:
     external: true
-  internal:
-    driver: bridge
-
-volumes:
-  inngest-postgres-data:
-  inngest-redis-data:
