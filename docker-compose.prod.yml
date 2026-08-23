@@ -55,19 +55,17 @@ x-logging: &logging
 
 services:
   api-worker:
+    # Context is the repo root so the Supabase project (config.toml +
+    # migrations + functions) is baked into the image at /app/supabase — no
+    # bind-mount. To apply migrations:
+    #   docker compose -f docker-compose.prod.yml exec api-worker \
+    #     supabase db push --workdir /app --db-url "$DATABASE_URL"
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: ${IMAGE_PREFIX:-jobverifai}/api:${IMAGE_TAG:-latest}
     restart: unless-stopped
     command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
-    volumes:
-      # The one bind-mount in production, and nothing at runtime reads it: the
-      # Supabase project (config.toml + migrations) lives at the repo root,
-      # outside this service's build context, so it can't be baked into the
-      # image. Mounted read-only to give the bundled CLI something to push:
-      #   docker compose -f docker-compose.prod.yml exec api-worker \
-      #     supabase db push --workdir /workspace --db-url "$DATABASE_URL"
-      - ./supabase:/workspace/supabase:ro
     environment:
       <<: *api-env
       # Inngest runs as its own Coolify pod. Point this at that server's URL

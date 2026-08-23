@@ -54,7 +54,11 @@ services:
 
   # Inngest worker — the ONLY HTTP surface Inngest calls back into.
   api-worker:
-    build: ./apps/api
+    # Context is the repo root so the image can bake in supabase/ (see the api
+    # Dockerfile + root .dockerignore).
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     # --reload + a bind mount of the source = live reload on host edits. Only
     # src/ is mounted (the editable `app` package points there); the image's
     # /app/.venv is left intact. --reload-dir scopes the watcher to src so it
@@ -78,20 +82,6 @@ services:
     ports:
       - "8000:8000" # /api/inngest, /healthz
 
-  # V0 synchronous HTTP API (app.main) — same image, different entrypoint.
-  api-http:
-    build: ./apps/api
-    # Same live-reload setup as api-worker (shared source, shared image).
-    command: >
-      uvicorn app.main:app --host 0.0.0.0 --port 8080
-      --reload --reload-dir /app/src
-    volumes:
-      - ./apps/api/src:/app/src
-    environment: *api-env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "8080:8080" # POST /investigations, GET /investigations/{id}
 
   # Next.js web app.
   web:

@@ -1,0 +1,26 @@
+# The api image builds with the repo root as its context (compose `context: .`)
+# so its Dockerfile can COPY both apps/api and supabase/. To keep the context
+# small, send NOTHING by default, then allow only those two trees back in.
+*
+
+!apps/api
+!supabase
+
+# Within the allowed trees, still drop caches, local env, and test-only dirs.
+apps/api/.venv
+apps/api/tests
+apps/api/eval
+apps/api/.pytest_cache
+apps/api/.ruff_cache
+**/__pycache__
+*.pyc
+
+# Local Supabase CLI state — never belongs in the image.
+supabase/.branches
+supabase/.temp
+supabase/snippets
+
+# Secrets never enter the image (this is what keeps supabase/.env out of the
+# baked-in project). Nothing in the Dockerfile copies .env files anyway.
+**/.env
+**/.env.*

@@ -43,25 +43,30 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# The build context is the repo ROOT (compose sets `context: .`) so we can reach
+# both this package (apps/api) and the Supabase project (supabase/) below. See
+# the root .dockerignore, which trims the context back down to just those two.
+
 # 1) Dependency layer — cached until pyproject.toml / uv.lock change.
-COPY pyproject.toml uv.lock ./
+COPY apps/api/pyproject.toml apps/api/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 
 # 2) Source + editable install of the `app` package itself.
-COPY src ./src
-COPY scripts ./scripts
+COPY apps/api/src ./src
+COPY apps/api/scripts ./scripts
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
-# 3) Supabase CLI, for applying migrations from inside the stack:
+# 3) Supabase CLI + project, for applying migrations from inside the stack:
 #     docker compose exec api-worker \
-#       supabase db push --workdir /workspace --db-url "$DATABASE_URL"
-# The project (supabase/config.toml + supabase/migrations) lives at the REPO
-# ROOT, outside this build context, so it is NOT baked in — compose bind-mounts
-# it at /workspace. `db push`/`migration up` only need a connection string; the
+#       supabase db push --workdir /app --db-url "$DATABASE_URL"
+# Because the context is the repo root, the project (supabase/config.toml +
+# supabase/migrations + supabase/functions) is baked in at /app/supabase — no
+# bind-mount needed. `db push`/`migration up` only need a connection string; the
 # Docker-backed commands (`start`, `db reset`, `db diff`) will not work here.
 COPY --from=supabase-cli /usr/local/bin/supabase /usr/local/bin/supabase
+COPY supabase ./supabase
 
 # 4) Drop root. Everything under /app is installed by now and only needs to be
 # readable at runtime, so the app user owns nothing and can write nowhere —
