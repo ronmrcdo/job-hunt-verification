@@ -93,26 +93,27 @@ target database enforces it strictly, first insert two throwaway
 afterward. A local `supabase start` stack with FK enforcement relaxed for
 seed data does not need this.
 
-## 4. Wire and confirm the Edge Function invocation (webhook)
+## 4. Wire and confirm the direct-to-Inngest emission
 
 `AFTER INSERT on investigations` fires the trigger
-`trg_emit_requested → emit_investigation_requested()`, which calls the
-Edge Function `emit-investigation-requested` via **pg_net**
-(`net.http_post`). The endpoint URL and its auth token are **not** baked
+`trg_emit_requested → emit_investigation_requested()`, which POSTs the
+Inngest event straight from **pg_net** (`net.http_post`) — there is no
+Edge Function in the path. The base URL and event key are **not** baked
 into the migration — the trigger reads them at run time from two database
-settings, and is a deliberate **no-op when the URL setting is unset** (so a
-fresh `supabase db reset` inserts cleanly instead of failing the INSERT on
-a webhook error). You wire them per environment before inserts should emit.
+settings, and is a deliberate **no-op when either setting is unset** (so a
+fresh `supabase db reset` inserts cleanly instead of failing the INSERT
+before Inngest is wired). You wire them per environment before inserts
+should emit.
 
 > **Prerequisite — pg_net:** `net.http_post` requires the `pg_net`
 > extension. The `investigations_v1` migration enables it
 > (`create extension if not exists pg_net`), so a migrated DB already has
-> it. Wiring the URL below on a DB where pg_net is *absent* flips the
+> it. Wiring the settings below on a DB where pg_net is *absent* flips the
 > trigger from no-op to active and every INSERT then aborts with
 > `schema "net" does not exist` — if you see that, your DB predates the
 > migration; re-run `supabase db reset` (or `create extension pg_net`).
 
-### 4a. Local webhook wiring
+### 4a. Local wiring
 
 From the DB container / a superuser connection (locally the superuser role
 is `supabase_admin`; the `postgres` role is not permitted to set these
@@ -120,30 +121,24 @@ parameters on the local stack):
 
 ```bash
 DB=supabase_db_<project>   # e.g. supabase_db_job-hunt-verification
-# Local service_role JWT (used as the function's Authorization bearer):
-SRK=$(docker exec supabase_edge_runtime_<project> \
-        printenv SUPABASE_SERVICE_ROLE_KEY)
 
 docker exec -i "$DB" psql -U supabase_admin -d postgres <<SQL
 alter database postgres
-  set app.settings.emit_investigation_url =
-      'http://kong:8000/functions/v1/emit-investigation-requested';
+  set app.settings.inngest_base_url = 'http://host.docker.internal:8288';
 alter database postgres
-  set app.settings.emit_investigation_token = '$SRK';
+  set app.settings.inngest_event_key = 'local-dev';
 SQL
 ```
 
-`kong:8000` is the gateway's in-network alias — the URL must be reachable
-**from inside the Postgres container**, so `127.0.0.1:54321` (a host
-address) will NOT work; use the `kong` alias. Settings take effect on new
-connections. The token is set only on the live local DB, never committed.
+`host.docker.internal:8288` (not `localhost`) because the URL must resolve
+**from inside the Postgres container** — it reaches the host-published
+Inngest dev server port that way. The dev server accepts any non-empty
+event key. Settings take effect on new connections.
 
-**Hosted:** set the same two settings to the project's functions endpoint
-(`https://<ref>.functions.supabase.co/emit-investigation-requested`) and a
-service_role JWT. Prefer sourcing the token from **Supabase Vault** rather
-than a plaintext GUC; if you keep the built-in Database-Webhook UI instead,
-point an AFTER INSERT webhook at the same function — the trigger's no-op
-guard means an unset URL simply skips emission.
+**Hosted:** set the same two settings to the self-hosted Inngest instance's
+base URL and its real event key. Two settings rather than one pre-joined
+URL so key rotation touches one value; prefer sourcing the key from
+**Supabase Vault** rather than a plaintext GUC where that's available.
 
 ### 4b. Confirm delivery
 
@@ -155,56 +150,27 @@ guard means an unset URL simply skips emission.
    docker exec -i "$DB" psql -U postgres -d postgres \
      -c "select status_code, content from net._http_response order by id desc limit 1;"
    ```
-   - `500 missing inngest config` → **wiring is correct**; the function ran
-     and only lacks its Inngest secrets (set `INNGEST_EVENT_URL` /
-     `INNGEST_EVENT_KEY` via `supabase secrets set` and run an Inngest dev
-     server for a full end-to-end event, per §8: the Inngest event `id`
-     must equal the investigation id).
-   - `401` → auth token missing/wrong. Connection error / NULL row → URL
-     unreachable from the DB container, or the URL setting is unset.
-3. Or tail the function logs directly:
-   ```bash
-   supabase functions logs emit-investigation-requested
-   ```
+   - `200` → wiring is correct; check the Inngest dashboard for
+     `run-investigation` (per §8: the Inngest event `id` must equal the
+     investigation id).
+   - Connection error / NULL row → URL unreachable from the DB container,
+     or the settings are unset (no `net._http_response` row is written at
+     all in that case — the trigger no-op'd before calling `net.http_post`).
+3. Or watch the Inngest dashboard directly for the incoming event.
 
-### 4c. Local secrets — the two gaps that keep runs from firing
+### 4c. Gotchas
 
-Even with §4a wired, a fresh local stack has **two unset secrets** that
-silently stop the pipeline. The symptom is: investigations INSERT fine and
-the detail page loads, but the Inngest dashboard shows only the
-`sweep-stale-queued` cron — `run-investigation` never appears — and the
-case sits at `queued` forever. Both are secrets, kept out of git by design;
-wire them locally as below.
-
-**Gap 1 — Edge Function → Inngest (`500 missing inngest config`).** The
-`emit-investigation-requested` function POSTs to
-`${INNGEST_EVENT_URL}/e/${INNGEST_EVENT_KEY}`; with those unset it returns
-500 and no event is emitted (this is exactly the §4b `500` case). Locally
-these come from `[edge_runtime.secrets]` in `supabase/config.toml`, which
-resolves them via `env()` from `supabase/.env` (gitignored):
-
-```bash
-# supabase/.env
-INNGEST_EVENT_URL=http://host.docker.internal:8288   # Inngest dev server on the host
-INNGEST_EVENT_KEY=local-dev                          # dev server accepts any key
-```
-
-`host.docker.internal:8288` (not `localhost`) because the URL must resolve
-from *inside the edge runtime container* — it reaches the host-published
-Inngest port that way. Apply with `supabase stop && supabase start` (edge
-secrets are read at container start, not hot-reloaded). Confirm the §4b
-response flips from `500` to `202`.
-
-**Gotcha — `supabase stop/start` drops pg_net (`schema "net" does not exist`).**
-On the local stack a restart preserves the migration history AND the db-level
-`app.settings.emit_investigation_url` GUC (it lives in `pg_db_role_setting`),
-but does NOT preserve the `pg_net` extension — the `net` schema is gone.
-Because `investigations_v1` is already marked applied, its
-`create extension if not exists pg_net` never re-runs, so the URL setting and
-`net` diverge and the emit trigger aborts EVERY check insert with
-`ERROR: schema "net" does not exist` ("We couldn't start the check.").
-Migration `20260820010000_emit_requested_guard_pg_net.sql` hardens the trigger
-to no-op (with a `WARNING`) when `net` is absent, so a restart can no longer
+**`supabase stop/start` drops pg_net (`schema "net" does not exist`).**
+On the local stack a restart preserves the migration history AND the
+db-level `app.settings.inngest_base_url` / `_inngest_event_key` GUCs (they
+live in `pg_db_role_setting`), but does NOT preserve the `pg_net`
+extension — the `net` schema is gone. Because `investigations_v1` is
+already marked applied, its `create extension if not exists pg_net` never
+re-runs, so the settings and `net` diverge and the emit trigger would abort
+EVERY check insert with `ERROR: schema "net" does not exist`
+("We couldn't start the check.") if left unguarded. Migration
+`20260820010000_emit_requested_guard_pg_net.sql` hardens the trigger to
+no-op (with a `WARNING`) when `net` is absent, so a restart can no longer
 break inserts — apply it once with `supabase migration up`. To restore
 *automatic* emission after such a restart, re-create the extension:
 
@@ -212,7 +178,7 @@ break inserts — apply it once with `supabase migration up`. To restore
 docker exec -i "$DB" psql -U postgres -d postgres -c "create extension if not exists pg_net;"
 ```
 
-**Gap 2 — Worker → OpenAI (`openai.OpenAIError: Missing credentials`).**
+**Worker → OpenAI (`openai.OpenAIError: Missing credentials`).**
 Once an event fires, `run-investigation` starts and the graph crashes at
 the `intake` node if the worker has no model key. `OPENAI_API_KEY` (and
 `TAVILY_API_KEY`) are read from the **root `.env`** by docker-compose's
