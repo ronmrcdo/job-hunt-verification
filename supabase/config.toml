@@ -385,15 +385,6 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
-[edge_runtime.secrets]
-# The `emit-investigation-requested` function POSTs each new investigation to
-# Inngest at `${INNGEST_EVENT_URL}/e/${INNGEST_EVENT_KEY}`. Values are resolved
-# from the environment (supabase/.env, gitignored) so no secret is committed.
-# Local dev: URL = the Inngest dev server on the host (reachable from the edge
-# runtime container as host.docker.internal:8288); KEY = any non-empty string.
-INNGEST_EVENT_URL = "env(INNGEST_EVENT_URL)"
-INNGEST_EVENT_KEY = "env(INNGEST_EVENT_KEY)"
-
 [analytics]
 enabled = true
 port = 54327
