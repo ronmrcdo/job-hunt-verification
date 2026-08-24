@@ -68,14 +68,8 @@ services:
     command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
     environment:
       <<: *api-env
-      # Both directions stay inside the shared coolify network — no job traffic
-      # crosses the public internet. Mirrors what dev has always done
-      # (docker-compose.yml: `inngest dev -u http://api-worker:8000/api/inngest`).
-      # NOTE: Coolify injects env set in its UI into containers, which can
-      # shadow these compose defaults — if a value looks wrong, check there.
       INNGEST_BASE_URL: ${INNGEST_BASE_URL:-http://inngest:8288}
-      # The URL the SDK advertises during app sync — where Inngest calls back.
-      # Read by the SDK from env (inngest/_internal/config_lib.py).
+      # URL Inngest calls back into for app sync and function invocation.
       INNGEST_SERVE_ORIGIN: ${INNGEST_SERVE_ORIGIN:-http://api-worker:8000}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required}
