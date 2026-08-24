@@ -63,16 +63,15 @@ client ──GET /investigations/{id}──▶ FastAPI (ownership-checked, 404 n
 
 ### V1 — background worker (`api-worker`) via Supabase + Inngest
 
-The launch path: the web app writes a submission row to Supabase; a Supabase **edge
-function** emits an Inngest event; the **Inngest worker** picks it up and runs the
-*same* graph in the background, writing status and results back to Supabase; the web
-app streams progress via Supabase **Realtime**.
+The launch path: the web app writes a submission row to Supabase; an **AFTER INSERT
+trigger** posts an Inngest event directly via pg_net; the **Inngest worker** picks it
+up and runs the *same* graph in the background, writing status and results back to
+Supabase; the web app streams progress via Supabase **Realtime**.
 
 ```mermaid
 flowchart LR
     W[apps/web<br/>Next.js] -->|insert submission| S[(Supabase<br/>Postgres + Auth + Realtime)]
-    S -->|trigger| EF[edge function<br/>emit-investigation-requested]
-    EF -->|event| IN[Inngest]
+    S -->|pg_net trigger| IN[Inngest]
     IN -->|invoke| WK[api-worker<br/>handle_requested]
     WK -->|run| G[[compiled LangGraph]]
     WK -->|status + result| S

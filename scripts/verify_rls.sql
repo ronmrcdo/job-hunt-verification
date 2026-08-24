@@ -181,13 +181,13 @@ end $$;
 reset role;
 
 -- -----------------------------------------------------------------------
--- Case 6: AFTER INSERT fires the webhook toward emit-investigation-requested.
--- NOT asserted by SQL here — Supabase's function-invocation trigger
--- (supabase_functions.http_request) does not reliably leave a queryable
--- row in this local/CI context, and the Edge Function itself does not
--- exist until Task 2. See scripts/RUNBOOK.md for how the operator
--- confirms this case via `supabase functions logs emit-investigation-requested`
--- (or a stubbed Inngest endpoint) after a real INSERT.
+-- Case 6: AFTER INSERT fires the trigger, which POSTs directly to Inngest
+-- via pg_net (reading app.settings.inngest_base_url / _inngest_event_key).
+-- NOT asserted by SQL here — the pg_net request is async and does not
+-- reliably leave a queryable row in this local/CI context. See
+-- scripts/RUNBOOK.md for how the operator confirms this case via the
+-- Inngest Dev Server dashboard (or the `net._http_response` table) after
+-- a real INSERT.
 -- -----------------------------------------------------------------------
 
 -- -----------------------------------------------------------------------

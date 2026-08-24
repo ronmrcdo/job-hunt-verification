@@ -7,7 +7,7 @@ name: job-hunt-verification
 # :54322 Postgres; see scripts/RUNBOOK.md). Containers here reach that Postgres
 # via the host gateway.
 #
-# Flow: web → Supabase edge fn `emit-investigation-requested` → Inngest (below)
+# Flow: web → Supabase (AFTER INSERT trigger posts via pg_net) → Inngest (below)
 #       → api-worker /api/inngest → runs the graph → writes back to Postgres.
 # ─────────────────────────────────────────────────────────────────────────────
 
