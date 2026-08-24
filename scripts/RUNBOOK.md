@@ -162,7 +162,7 @@ URL so key rotation touches one value; prefer sourcing the key from
 
 **`supabase stop/start` drops pg_net (`schema "net" does not exist`).**
 On the local stack a restart preserves the migration history AND the
-db-level `app.settings.inngest_base_url` / `_inngest_event_key` GUCs (they
+db-level `app.settings.inngest_base_url` / `app.settings.inngest_event_key` GUCs (they
 live in `pg_db_role_setting`), but does NOT preserve the `pg_net`
 extension — the `net` schema is gone. Because `investigations_v1` is
 already marked applied, its `create extension if not exists pg_net` never

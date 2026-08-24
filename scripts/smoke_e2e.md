@@ -20,15 +20,18 @@ Before running this smoke test, ensure all of the following are in place:
    
    Both must complete with `OK` notices and no errors.
 
-3. **Edge Function deployed with secrets**: The `emit-investigation-requested` Edge Function
-   must be deployed to the local stack with its required environment secrets set:
+3. **Database settings wired to Inngest**: The AFTER INSERT trigger POSTs directly to
+   Inngest via pg_net, reading two database settings. Set them from inside the DB
+   container:
 
    ```bash
-   supabase secrets set INNGEST_EVENT_URL=<inngest-dev-server-url> INNGEST_EVENT_KEY=<key>
+   alter database postgres set app.settings.inngest_base_url = 'http://host.docker.internal:8288';
+   alter database postgres set app.settings.inngest_event_key = 'local-dev';
    ```
 
-   For local development, `INNGEST_EVENT_URL` typically points to the Inngest Dev Server
-   (e.g., `http://localhost:8288`).
+   For local development, `app.settings.inngest_base_url` points to the Inngest Dev Server
+   via `host.docker.internal` (not `localhost`), since the URL must resolve from inside the
+   Postgres container. See `scripts/RUNBOOK.md` §4a.
 
 4. **Inngest Dev Server running**: `npx inngest-cli dev` is running in a separate terminal.
    This accepts webhook events and exposes a dashboard at `http://localhost:8288`.
@@ -86,8 +89,8 @@ contain a `job_text` field; the `user_id` column DEFAULTs to `auth.uid()`, and R
 CHECK verifies `user_id = auth.uid()`. The AFTER INSERT trigger will force `status='queued'`
 and null out server columns (assessment, findings, what_to_verify, cost, check_count).
 
-The AFTER INSERT trigger also fires the `emit-investigation-requested` Edge Function, which
-sends an `investigation.requested` event to the Inngest Dev Server.
+The AFTER INSERT trigger also POSTs directly to the Inngest Dev Server via pg_net, sending
+an `investigation.requested` event.
 
 **Run with the same environment variables from Step 1:**
 
@@ -213,24 +216,18 @@ echo "  What to verify is populated: $([ "$WHAT_TO_VERIFY" != "null" ] && echo "
 If the investigation remains stuck in `queued` after Step 2, or no `investigation_steps`
 arrive:
 
-1. **Check the Edge Function logs** for errors:
-   ```bash
-   supabase functions logs emit-investigation-requested
-   ```
-   
-   Look for any error messages indicating a failed HTTP POST to Inngest, missing secrets,
-   or a malformed webhook payload.
-
-2. **Check the Inngest Dev Server dashboard** at `http://localhost:8288`:
+1. **Check the Inngest Dev Server dashboard** at `http://localhost:8288`:
    - Navigate to Events and search for `investigation.requested` with the investigation ID.
-   - If the event appears, the Edge Function succeeded; the issue is downstream in the worker.
-   - If the event is missing, the Edge Function either failed to fire or failed to POST to Inngest.
+   - If the event appears, the trigger succeeded; the issue is downstream in the worker.
+   - If it's missing, the trigger's HTTP POST failed — check the `net._http_response`
+     table for the response (see `scripts/RUNBOOK.md` §4a for the query), and confirm
+     `app.settings.inngest_base_url` / `app.settings.inngest_event_key` are set.
 
-3. **Check the Python worker logs**:
+2. **Check the Python worker logs**:
    - Look for any exceptions or error traces in the ASGI server's stdout/stderr.
    - Verify that `DATABASE_URL`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` are set correctly.
 
-4. **§6 stale-queued sweeper**:
+3. **§6 stale-queued sweeper**:
    - The spec defines a background job (stale-queued sweeper) that periodically detects investigations
      stuck in `queued` and retries or fails them after a deadline.
    - If the main webhook flow fails end-to-end, the sweeper is the backstop to prevent investigations
