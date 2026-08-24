@@ -68,9 +68,15 @@ services:
     command: uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
     environment:
       <<: *api-env
-      # Inngest runs as its own Coolify pod. Point this at that server's URL
-      # (its /e/ event endpoint), e.g. https://jobverifai-inngest.ronmrcdo.dev.
-      INNGEST_BASE_URL: ${INNGEST_BASE_URL:?INNGEST_BASE_URL is required (URL of the separately-deployed Inngest server)}
+      # Both directions stay inside the shared coolify network — no job traffic
+      # crosses the public internet. Mirrors what dev has always done
+      # (docker-compose.yml: `inngest dev -u http://api-worker:8000/api/inngest`).
+      # NOTE: Coolify injects env set in its UI into containers, which can
+      # shadow these compose defaults — if a value looks wrong, check there.
+      INNGEST_BASE_URL: ${INNGEST_BASE_URL:-http://inngest:8288}
+      # The URL the SDK advertises during app sync — where Inngest calls back.
+      # Read by the SDK from env (inngest/_internal/config_lib.py).
+      INNGEST_SERVE_ORIGIN: ${INNGEST_SERVE_ORIGIN:-http://api-worker:8000}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required}
     healthcheck:
@@ -81,10 +87,6 @@ services:
       start_period: 20s
     networks: [coolify]
     logging: *logging
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.jhv-worker.rule=Host(`jobverifai-worker.ronmrcdo.dev`)"
-      - "traefik.http.services.jhv-worker.loadbalancer.server.port=8000"
 
   web:
     build:
