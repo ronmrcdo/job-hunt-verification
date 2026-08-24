@@ -414,3 +414,20 @@ Run each command in the deploy and operate sections against production. A produc
 - [ ] **Step 3: Link it**
 
 Add a line under `## System architecture` in `README.md` pointing to `docs/PRODUCTION.md` for deployment and operations, so it is discoverable from the entry point.
+
+- [ ] **Step 4: Strip the compose comments**
+
+Only after Steps 1-3 are complete and `docs/PRODUCTION.md` demonstrably contains the operational knowledge listed in Step 1 item 6.
+
+`docker-compose.yml` is 46% comments and `docker-compose.prod.yml` is 39%. Reduce both to configuration: delete the explanatory header blocks and the prose comments whose content now lives in `docs/PRODUCTION.md`.
+
+Before deleting any comment, confirm its content appears in `docs/PRODUCTION.md`. If it does not, either add it there or keep the comment — the point of the sequencing is that nothing is lost. Keep comments that would prevent a direct editing mistake at the line they annotate (for example, that `NEXT_PUBLIC_*` are build-time args, not runtime env).
+
+Verify after editing:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production config >/dev/null && echo OK
+docker compose -f docker-compose.yml config >/dev/null && echo OK
+```
+
+Both must print `OK` — a comment strip must not change how either file parses.
