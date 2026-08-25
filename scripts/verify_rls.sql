@@ -675,6 +675,29 @@ begin
   raise notice 'Case 18 OK: blocked_email_domains deny-all to authenticated (% rows for owner)', v_owner;
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 19 (H1, 20260826120000): a client cannot back-date created_at to
+-- escape the weekly window. Insert as an authenticated user with an ancient
+-- created_at and assert the stored value was forced to ~now() by
+-- enforce_check_quota().
+-- -----------------------------------------------------------------------
+do $$
+declare
+  uid uuid := gen_random_uuid();
+  got timestamptz;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', uid)::text, true);
+  set local role authenticated;
+  insert into investigations (user_id, submission, created_at)
+    values (uid, '{"job_text":"x"}'::jsonb, timestamptz '2000-01-01T00:00:00Z')
+    returning created_at into got;
+  reset role;
+  if got < now() - interval '1 minute' then
+    raise exception 'Case 19 FAIL: created_at was not pinned (got %)', got;
+  end if;
+  raise notice 'Case 19 PASS: created_at pinned to now() on client insert';
+end $$;
+
 reset role;
 
 rollback;
