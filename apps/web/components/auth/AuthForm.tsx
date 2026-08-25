@@ -9,6 +9,7 @@ import { useForm, Controller, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import Link from "next/link";
 import { TextField } from "../ui/TextField";
 import { Button } from "../ui/Button";
@@ -56,6 +57,15 @@ export function AuthForm() {
   // Which async action is in flight, so exactly one button spins and both
   // (plus repeat submits) are locked out until it resolves.
   const [busy, setBusy] = useState<null | "submit" | "google">(null);
+  // Cloudflare Turnstile is active only when a site key is configured. When it
+  // is, GoTrue (captcha enabled server-side) rejects signup/sign-in without a
+  // valid token, so the widget must produce one and we pass it on. Read at
+  // render (not module scope) so Next inlines NEXT_PUBLIC_* per-occurrence and
+  // tests can stub it.
+  const captchaSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const captchaActive = Boolean(captchaSiteKey);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
 
   // The active schema follows `mode`. A ref keeps the resolver stable while
   // still reading the current mode, so validation switches the instant the
@@ -86,14 +96,21 @@ export function AuthForm() {
   async function onSubmit(values: AuthFormValues) {
     if (busy) return;
     setAuthError(null);
+    if (captchaActive && !captchaToken) {
+      setAuthError("Please complete the verification challenge before continuing.");
+      return;
+    }
     setBusy("submit");
+    let attempted = false;
     try {
       const supabase = createClient();
       const redirectTo = `${window.location.origin}/auth/callback`;
       if (mode === "signin") {
+        attempted = true;
         const { error } = await supabase.auth.signInWithPassword({
           email: values.email,
           password: values.password,
+          ...(captchaToken ? { options: { captchaToken } } : {}),
         });
         if (error) {
           setAuthError(error.message);
@@ -101,12 +118,14 @@ export function AuthForm() {
         }
         router.push("/verify");
       } else {
+        attempted = true;
         const { error } = await supabase.auth.signUp({
           email: values.email,
           password: values.password,
           options: {
             emailRedirectTo: redirectTo,
             data: { full_name: values.fullName },
+            ...(captchaToken ? { captchaToken } : {}),
           },
         });
         if (error) {
@@ -117,6 +136,12 @@ export function AuthForm() {
       }
     } finally {
       setBusy(null);
+      // Turnstile tokens are single-use — after any real attempt, discard the
+      // spent token and reset the widget so a retry gets a fresh one.
+      if (attempted && captchaActive) {
+        turnstileRef.current?.reset();
+        setCaptchaToken(null);
+      }
     }
   }
 
@@ -318,6 +343,17 @@ export function AuthForm() {
         <div role="alert" className="rounded-none border border-warn-rule bg-warn-tint p-3">
           <p className="text-[13px] leading-[1.5]">{authError}</p>
         </div>
+      ) : null}
+
+      {captchaActive ? (
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={captchaSiteKey as string}
+          onSuccess={setCaptchaToken}
+          onExpire={() => setCaptchaToken(null)}
+          onError={() => setCaptchaToken(null)}
+          options={{ theme: "light", size: "flexible" }}
+        />
       ) : null}
 
       <Button

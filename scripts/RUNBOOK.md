@@ -236,9 +236,16 @@ already points at MailHog (`host.docker.internal:1025`), so confirmation
 emails land in the MailHog inbox UI at `http://localhost:8025` instead of a
 real mailbox; open the confirmation link from there to complete sign-up.
 `[auth.captcha]` is also enabled with `provider = "turnstile"` and
-`secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"` — set a (dummy is fine for
-local dev) `SUPABASE_AUTH_CAPTCHA_SECRET` env var before `supabase start`, or
-the CLI will fail to resolve the `env(...)` reference.
+`secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"` — set `SUPABASE_AUTH_CAPTCHA_SECRET`
+before `supabase start`, or the CLI fails to resolve the `env(...)` reference.
+For local dev use Cloudflare's always-pass **test** secret key
+`1x0000000000000000000000000000000AA` (NOT an arbitrary dummy — GoTrue verifies
+the token against this secret, and a dummy would reject the always-pass test
+token the front end's test site key `1x00000000000000000000AA` produces, so
+sign-in would fail). The front end reads its site key from
+`NEXT_PUBLIC_TURNSTILE_SITE_KEY` (see apps/web/.env.example); the widget lives in
+`components/auth/AuthForm.tsx` and passes the token to Supabase auth. In
+production, set your real Cloudflare site/secret keys instead.
 
 **Supabase Auth settings** (project > Settings > Auth > Providers):
 1. Enable **"Confirm email"** (toggle ON). Unconfirmed users never receive an authenticated session and cannot insert investigations, providing an additional barrier against disposable-email account farms.

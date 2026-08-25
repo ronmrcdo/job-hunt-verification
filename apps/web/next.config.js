@@ -28,7 +28,10 @@ const nextConfig = {
               "default-src 'self'",
               "img-src 'self' data:",
               "style-src 'self' 'unsafe-inline'",
-              "script-src 'self'",
+              // Cloudflare Turnstile loads its script and renders its challenge
+              // in an iframe from challenges.cloudflare.com (auth captcha).
+              "script-src 'self' https://challenges.cloudflare.com",
+              "frame-src https://challenges.cloudflare.com",
               "connect-src 'self' https: wss:",
               "frame-ancestors 'none'",
               "base-uri 'self'",
