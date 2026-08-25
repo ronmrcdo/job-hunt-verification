@@ -61,6 +61,12 @@ services:
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       NODE_ENV: production
+      # Applied by entrypoint.sh on boot via `supabase db push` (see apps/web/Dockerfile).
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    volumes:
+      # Read-only source of truth for migrations — the CLI reads ./supabase from
+      # the CWD (/app). Not baked into the image; kept single-copy at repo root.
+      - ./supabase:/app/supabase:ro
     networks: [coolify]
     logging: *logging
     labels:
