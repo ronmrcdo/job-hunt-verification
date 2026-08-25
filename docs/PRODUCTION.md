@@ -171,14 +171,21 @@ GoTrue renders the confirmation / recovery / magic-link / email-change mails fro
 HTML templates it fetches **over HTTP at send time**. They live in this repo at
 `apps/web/emails/` and are served by `apps/web/app/emails/[template]/route.ts`.
 
-Set these on the **Auth (GoTrue) service** in the Supabase Coolify stack:
+Set these on the **Auth (GoTrue) service** in the Supabase Coolify stack — the
+**unprefixed** names, not the `GOTRUE_`-prefixed ones:
 
 ```
-GOTRUE_MAILER_TEMPLATES_CONFIRMATION=http://web:3000/emails/confirmation.html
-GOTRUE_MAILER_TEMPLATES_RECOVERY=http://web:3000/emails/recovery.html
-GOTRUE_MAILER_TEMPLATES_MAGIC_LINK=http://web:3000/emails/magic-link.html
-GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE=http://web:3000/emails/email-change.html
+MAILER_TEMPLATES_CONFIRMATION=http://web:3000/emails/confirmation.html
+MAILER_TEMPLATES_RECOVERY=http://web:3000/emails/recovery.html
+MAILER_TEMPLATES_MAGIC_LINK=http://web:3000/emails/magic-link.html
+MAILER_TEMPLATES_EMAIL_CHANGE=http://web:3000/emails/email-change.html
 ```
+
+> **Setting `GOTRUE_MAILER_TEMPLATES_*` directly does nothing.** That stack's
+> compose defines `GOTRUE_MAILER_TEMPLATES_X: ${MAILER_TEMPLATES_X}`, so the
+> interpolation overwrites whatever the UI holds for the prefixed name — with an
+> empty string when the unprefixed one is unset. Env changes also need a
+> **redeploy**, not a restart: the container has to be recreated.
 
 GoTrue and `web` share the external `coolify` network, so this fetch is
 container-to-container by compose service alias — no public exposure, no TLS, no
@@ -199,6 +206,27 @@ public domain should not confirm the path exists.
 > docker compose -f docker-compose.prod.yml exec web \
 >   node -e "fetch('http://127.0.0.1:3000/emails/confirmation.html').then(r=>console.log(r.status))"
 > ```
+
+**A misconfigured template fails silently.** GoTrue never errors a send over
+templating: an empty URL goes straight to the built-in body
+(`internal/mailer/templatemailer/template.go`, the `url == ""` branch), and a
+*failed fetch* — DNS miss, 404, timeout — falls back to the built-in body too and
+**caches that result** (`Cache.load`). So "the mail arrived but looks default"
+means one of: the env never reached the process, or the fetch failed. Tell them
+apart from inside the auth container:
+
+```bash
+# 1. is the config in the process at all?
+docker exec <auth> env | grep -i mailer_templates
+# 2. can GoTrue's own network namespace reach it?
+docker run --rm --network container:<auth> curlimages/curl -sS -i http://web:3000/emails/confirmation.html
+# 3. a failed fetch logs this; an empty URL logs nothing
+docker logs <auth> --since 1h 2>&1 | grep templatemailer
+```
+
+A fetch failure is cached for `GOTRUE_MAILER_TEMPLATE_MAX_AGE` (default 10m) and
+retried at most every `GOTRUE_MAILER_TEMPLATE_RETRY_INTERVAL` (default 10s), so
+give it a moment after a fix before concluding it did not work.
 
 Gotchas:
 - If `web` does not resolve from the Supabase stack (another stack on the shared

@@ -28,10 +28,14 @@ lives in its OWN Coolify stack — not this repo's compose) at the container:
 
 | Env var | Value |
 | --- | --- |
-| `GOTRUE_MAILER_TEMPLATES_CONFIRMATION` | `http://web:3000/emails/confirmation.html` |
-| `GOTRUE_MAILER_TEMPLATES_RECOVERY` | `http://web:3000/emails/recovery.html` |
-| `GOTRUE_MAILER_TEMPLATES_MAGIC_LINK` | `http://web:3000/emails/magic-link.html` |
-| `GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE` | `http://web:3000/emails/email-change.html` |
+| `MAILER_TEMPLATES_CONFIRMATION` | `http://web:3000/emails/confirmation.html` |
+| `MAILER_TEMPLATES_RECOVERY` | `http://web:3000/emails/recovery.html` |
+| `MAILER_TEMPLATES_MAGIC_LINK` | `http://web:3000/emails/magic-link.html` |
+| `MAILER_TEMPLATES_EMAIL_CHANGE` | `http://web:3000/emails/email-change.html` |
+
+Use the UNPREFIXED names — that stack's compose defines
+`GOTRUE_MAILER_TEMPLATES_X: ${MAILER_TEMPLATES_X}`, so setting the `GOTRUE_`
+name in the Coolify UI is overwritten by the interpolation. See PRODUCTION.md §3e.
 
 GoTrue and `web` share the external `coolify` network, so GoTrue reaches the web
 container directly by its compose service alias — no public exposure, no TLS, no
@@ -63,6 +67,9 @@ is whatever is in the URL, and a host outside the allow-list 404s.
 - {{ .NewEmail }}         new address (email change only)
 - {{ .SiteURL }}          site URL
 - {{ .Data.<key> }}       user_metadata, e.g. {{ .Data.full_name }}
+
+## A bad URL fails SILENTLY: an empty value, a DNS miss, or a 404 all fall
+## back to GoTrue's built-in body and get cached. See PRODUCTION.md §3e to triage.
 
 ## GoTrue caches templates (default 10m). After editing, either wait out
 ## `GOTRUE_MAILER_TEMPLATE_MAX_AGE` or restart the auth container. The web route
