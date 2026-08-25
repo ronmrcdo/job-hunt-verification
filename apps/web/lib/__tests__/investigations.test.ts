@@ -44,6 +44,20 @@ describe("createInvestigation", () => {
     const r = await createInvestigation(client, { job_text: "" });
     expect(r).toHaveProperty("error");
   });
+  it("is idempotent: a duplicate (PT409) returns the existing id from the hint, not an error", async () => {
+    // The BEFORE INSERT trigger raises PT409 with hint=<existing id> when the
+    // same user re-submits an identical job inside the dedup window. The client
+    // treats it as success and redirects to the existing investigation — no new
+    // row, no quota spent. Match on code first, message as the fallback.
+    const client = fakeClient({
+      "investigations:single": {
+        data: null,
+        error: { code: "PT409", message: "duplicate_submission", hint: "existing-id" },
+      },
+    });
+    const r = await createInvestigation(client, { job_text: "dup" });
+    expect(r).toEqual({ id: "existing-id" });
+  });
 });
 
 describe("getInvestigation", () => {

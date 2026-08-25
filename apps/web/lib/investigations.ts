@@ -132,6 +132,14 @@ export async function createInvestigation(
     .select("id")
     .single();
   if (error || !data) {
+    // Idempotent dedup: the trigger raises SQLSTATE PT409 with hint=<existing
+    // id> when this user re-submits an identical job inside the dedup window.
+    // Treat it as success — hand back the existing id so the caller redirects
+    // there (no new row, no quota spent). Match on code first, message as
+    // fallback, and only if the hint actually carries an id.
+    if ((error?.code === "PT409" || error?.message === "duplicate_submission") && error?.hint) {
+      return { id: error.hint };
+    }
     // Over-quota surfaces as SQLSTATE PT429 (HTTP 429). Match on code first,
     // fall back to the message so UX survives a PostgREST mapping change.
     if (error?.code === "PT429" || error?.message === "check_quota_exceeded") {
