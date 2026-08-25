@@ -254,7 +254,7 @@ Prerequisites: Docker, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/)
 
 ```bash
 cp .env.example .env      # fill in OPENAI_API_KEY, TAVILY_API_KEY (or use the local LLM profile)
-docker compose up         # brings up inngest, api-worker, api-http, web, mailhog
+docker compose up         # brings up inngest, api-worker, web, mailhog
 ```
 
 Services (see `docker-compose.yml`):
@@ -262,7 +262,6 @@ Services (see `docker-compose.yml`):
 | Service | Port | Role |
 |---|---|---|
 | `web` | — | Next.js dev server |
-| `api-http` | `8080` | V0 synchronous FastAPI (`POST/GET /investigations`) |
 | `api-worker` | `8000` | V1 Inngest worker (`/api/inngest`, `/healthz`) |
 | `inngest` | `8288` | Inngest dev server (dashboard + event ingestion) |
 | `mailhog` | `8025` | Captures "report an issue" mail in dev |
