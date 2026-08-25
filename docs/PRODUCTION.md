@@ -92,6 +92,7 @@ loudly instead of booting a half-configured stack.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✔ | **Build-time** — inlined into the web bundle. |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | ✔ | **Build-time** — Cloudflare Turnstile **site** key for the auth captcha; inlined into the web bundle. Must pair with `GOTRUE_SECURITY_CAPTCHA_SECRET` on the Supabase stack (§3d), or sign-in/sign-up fails. |
 | `WEB_HOST` / `INNGEST_HOST` | — | Traefik router hostnames. |
+| `EMAIL_TEMPLATE_ALLOWED_HOSTS` | default `web:3000,127.0.0.1:3000,localhost:3000` | Hosts GoTrue may fetch the auth email templates on (§3e). A `Host` outside this list gets a 404. |
 | model routing (`CHEAP_MODEL`, `STRONG_MODEL`, `*_REASONING_EFFORT`, `STRUCTURED_OUTPUT_*`, `OPENAI_BASE_URL`, `COST_PRICES_JSON`) | — | Compose has sane defaults; override per deployment. |
 
 `INNGEST_BASE_URL` and `INNGEST_SERVE_ORIGIN` are read by the Inngest SDK
@@ -162,6 +163,55 @@ so the web bundle must carry a working site key. The frontend widget lives in
 always-pass **test** keys (site `1x00000000000000000000AA`, secret
 `1x0000000000000000000000000000000AA`) — see `apps/web/.env.example` and
 `scripts/RUNBOOK.md`.
+
+
+### 3e. Auth email templates (internal-only)
+
+GoTrue renders the confirmation / recovery / magic-link / email-change mails from
+HTML templates it fetches **over HTTP at send time**. They live in this repo at
+`apps/web/emails/` and are served by `apps/web/app/emails/[template]/route.ts`.
+
+Set these on the **Auth (GoTrue) service** in the Supabase Coolify stack:
+
+```
+GOTRUE_MAILER_TEMPLATES_CONFIRMATION=http://web:3000/emails/confirmation.html
+GOTRUE_MAILER_TEMPLATES_RECOVERY=http://web:3000/emails/recovery.html
+GOTRUE_MAILER_TEMPLATES_MAGIC_LINK=http://web:3000/emails/magic-link.html
+GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE=http://web:3000/emails/email-change.html
+```
+
+GoTrue and `web` share the external `coolify` network, so this fetch is
+container-to-container by compose service alias — no public exposure, no TLS, no
+Traefik or Cloudflare in the path. Only the template *source* is internal; the
+link the user clicks (`{{ .ConfirmationURL }}`) is built by GoTrue from
+`SITE_URL` / `API_EXTERNAL_URL` and stays the public domain.
+
+**The route answers internal callers only.** It returns the template only when
+the request carries none of `x-forwarded-for` / `x-forwarded-host` /
+`x-forwarded-proto` (Traefik sets all three on anything it forwards, and an
+outside client cannot strip them) **and** its `Host` is in
+`EMAIL_TEMPLATE_ALLOWED_HOSTS`. Everything else gets a **404, not a 403** — the
+public domain should not confirm the path exists.
+
+> `https://<WEB_HOST>/emails/confirmation.html` returning 404 is **correct**.
+> Verify from inside the network instead:
+> ```bash
+> docker compose -f docker-compose.prod.yml exec web \
+>   node -e "fetch('http://127.0.0.1:3000/emails/confirmation.html').then(r=>console.log(r.status))"
+> ```
+
+Gotchas:
+- If `web` does not resolve from the Supabase stack (another stack on the shared
+  network claims the alias), use the Coolify-generated container name in the URLs
+  **and** add that `host:port` to `EMAIL_TEMPLATE_ALLOWED_HOSTS` — GoTrue sends
+  whatever host the URL names, and an unlisted host 404s.
+- GoTrue caches templates for `GOTRUE_MAILER_TEMPLATE_MAX_AGE` (default 10m).
+  After editing a template, wait it out or restart the auth container.
+- `emails/` is copied into the prod image explicitly (`apps/web/Dockerfile`);
+  `output: "standalone"` does not trace it. Adding a template also means adding
+  its filename to the allow-list in the route handler.
+- `/emails` stays excluded from the Next middleware matcher — GoTrue fetches with
+  no session, and the matcher runs on internal requests too.
 
 ---
 
