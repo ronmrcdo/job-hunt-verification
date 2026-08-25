@@ -228,6 +228,18 @@ the installed package's own migration source or a real `setup()` dump.
 
 ## 6. Disposable email signup block and auth configuration
 
+**Local dev note.** `supabase/config.toml` now sets `[auth.email]
+enable_confirmations = true` (dev-parity with the hardened production
+posture), so local sign-ups also require confirming email before the first
+sign-in works. This does **not** break the local flow — `[auth.email.smtp]`
+already points at MailHog (`host.docker.internal:1025`), so confirmation
+emails land in the MailHog inbox UI at `http://localhost:8025` instead of a
+real mailbox; open the confirmation link from there to complete sign-up.
+`[auth.captcha]` is also enabled with `provider = "turnstile"` and
+`secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"` — set a (dummy is fine for
+local dev) `SUPABASE_AUTH_CAPTCHA_SECRET` env var before `supabase start`, or
+the CLI will fail to resolve the `env(...)` reference.
+
 **Supabase Auth settings** (project > Settings > Auth > Providers):
 1. Enable **"Confirm email"** (toggle ON). Unconfirmed users never receive an authenticated session and cannot insert investigations, providing an additional barrier against disposable-email account farms.
 2. Enable **Google OAuth** as the higher-trust sign-up path. In practice a Google sign-up carries a Google-domain (or workspace) email, which is not on the disposable list, so it passes the block; the block is not skipped for OAuth — the `before insert on auth.users` trigger has no provider carve-out and fires for every insert path (email, OAuth, and admin/service-role user creation alike).
