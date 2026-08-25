@@ -68,6 +68,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY --from=supabase-cli /usr/local/bin/supabase /usr/local/bin/supabase
 COPY supabase ./supabase
 
+# entrypoint.sh runs `supabase db push` before the service command when
+# RUN_MIGRATIONS=1 (prod api-worker only), then execs "$@". Everything it needs
+# — CLI + project — is baked in above, so no bind-mount or network context.
+COPY --chmod=0755 apps/api/entrypoint.sh /app/entrypoint.sh
+
 # 4) Drop root. Everything under /app is installed by now and only needs to be
 # readable at runtime, so the app user owns nothing and can write nowhere —
 # which is what we want in production. In dev the bind-mounted source is only
@@ -87,4 +92,8 @@ USER appuser
 # nothing reads the metadata anyway. Dev publishes ports explicitly in
 # docker-compose.yml; production publishes none and tells Traefik the port
 # outright (traefik.http.services.jhv-worker.loadbalancer.server.port).
+#
+# ENTRYPOINT wraps the command with the migration step; CMD is the default it
+# execs (compose overrides it per service).
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "app.worker.app:app", "--host", "0.0.0.0", "--port", "8000"]

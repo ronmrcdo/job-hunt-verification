@@ -18,29 +18,6 @@ FROM node:22-slim AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# ── supabase-cli: throwaway fetch stage. The CLI is a single static binary, but
-# downloading it needs curl, which node:22-slim does not ship — grabbing it here
-# keeps curl (and apt's lists) out of the runtime image; only the binary is
-# copied across. Kept in lockstep with apps/api/Dockerfile's version pin.
-# TARGETARCH is a BuildKit predefined arg and must be re-declared per stage.
-FROM node:22-slim AS supabase-cli
-ARG SUPABASE_CLI_VERSION=2.115.0
-ARG TARGETARCH
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-RUN set -eux; \
-    case "${TARGETARCH:-amd64}" in \
-      amd64) SUPABASE_ARCH=amd64 ;; \
-      arm64) SUPABASE_ARCH=arm64 ;; \
-      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL -o /tmp/supabase.tar.gz \
-      "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_linux_${SUPABASE_ARCH}.tar.gz"; \
-    tar -xzf /tmp/supabase.tar.gz -C /usr/local/bin supabase; \
-    rm /tmp/supabase.tar.gz; \
-    supabase --version
-
 # ── deps: install node_modules once; shared by dev and build. No per-app
 # lockfile (the frozen pnpm-lock.yaml lives at the monorepo root), so resolve
 # from package.json. --prod=false keeps devDependencies (Tailwind/PostCSS + the
@@ -81,12 +58,6 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
-# Migration tooling: the CLI binary is baked in; the Supabase project itself
-# (config.toml + migrations) is NOT — it is bind-mounted at /app/supabase in
-# docker-compose.prod.yml, keeping a single source of truth at the repo root.
-# entrypoint.sh runs `supabase db push` before booting the server.
-COPY --from=supabase-cli /usr/local/bin/supabase /usr/local/bin/supabase
-COPY --chmod=0755 entrypoint.sh ./entrypoint.sh
 USER node
 # Deliberately no EXPOSE: nothing publishes this port in production. Traefik
 # reaches the container over the shared network and is told the port outright
@@ -95,6 +66,4 @@ USER node
 # node:22-slim ships no curl/wget, so probe with node's built-in fetch.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-# entrypoint.sh applies migrations (when DATABASE_URL is set) then execs
-# `node server.js`, so it owns startup — no CMD needed.
-ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["node", "server.js"]
