@@ -86,3 +86,21 @@ async def test_clean_finding_claim_untouched(monkeypatch):
     out = await ll.language_linter(_state("We found 2 signals consistent with scam patterns.",
                                            findings=[f]))
     assert out["findings"][0].claim == "The domain was registered 3 days ago"
+
+
+@pytest.mark.asyncio
+async def test_regen_prompt_fences_untrusted_summary(monkeypatch):
+    # The summary sent to the regen LLM is derived from attacker-influenced
+    # content upstream; it must be fenced like the other prompt-building
+    # sites (H2), not passed raw as the whole user message.
+    captured = {}
+
+    async def fake_call(model, schema, messages, *, node):
+        captured["user"] = messages[1][1]
+        return schema(summary="We found signals consistent with known scam patterns."), \
+               NodeUsage(node=node, model="cheap")
+    monkeypatch.setattr(ll, "structured_call", fake_call)
+    await ll.language_linter(_state("Acme Global is a scam and will defraud you."))
+    user = captured["user"]
+    assert user.startswith("<<<SUMMARY>>>\n")
+    assert user.endswith("\n<<<END>>>")
