@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from app.graph.state import InvestigationState, Finding, Category, Direction, Severity
 from app.llm import strong_model, structured_call
+from app.security.fences import neutralize, wrap_untrusted
 
 
 class _LLMFinding(BaseModel):
@@ -82,11 +83,11 @@ def _provenance(source_ids: list[str], sources_by_id: dict) -> str:
 def _evidence_pack(state: InvestigationState) -> str:
     lines = []
     for s in state.sources:
-        lines.append(f"[{s.id}] ({s.kind}) {s.url or ''}\n{s.content_summary}")
+        lines.append(f"[{s.id}] ({s.kind}) {neutralize(s.url or '')}\n{neutralize(s.content_summary)}")
     signals = {k: v for k, v in state.deterministic_signals.items() if k != "citation_drops"}
     return (
-        f"Deterministic signals: {signals}\n\n"
-        "<<<EVIDENCE>>>\n" + "\n\n".join(lines) + "\n<<<END>>>"
+        f"Deterministic signals: {neutralize(str(signals))}\n\n"
+        + wrap_untrusted("EVIDENCE", "\n\n".join(lines))
     )
 
 

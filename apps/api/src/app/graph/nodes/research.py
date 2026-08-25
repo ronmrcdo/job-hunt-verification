@@ -30,6 +30,7 @@ from app.graph.state import ExtractedEntities, InvestigationState, Source
 from app.tools.tavily import tavily_search, build_company_queries
 from app.tools.fetcher import safe_fetch
 from app.llm import cheap_model, structured_call
+from app.security.fences import neutralize, wrap_untrusted
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +58,12 @@ async def _summarize_hit(hit, model, entities: ExtractedEntities) -> tuple[Sourc
         return None, None
     excerpt = body[:EXCERPT_CAP]
     identity = (
-        f"Company under investigation: {entities.company_name or 'unknown'} "
-        f"(claimed domain: {entities.company_domain or 'unknown'})."
+        f"Company under investigation: {neutralize(entities.company_name or 'unknown')} "
+        f"(claimed domain: {neutralize(entities.company_domain or 'unknown')})."
     )
     messages = [
         ("system", _SYS),
-        ("user", f"{identity}\nURL: {hit.url}\n<<<PAGE>>>\n{excerpt}\n<<<END>>>"),
+        ("user", f"{identity}\nURL: {neutralize(hit.url)}\n" + wrap_untrusted("PAGE", excerpt)),
     ]
     summary, usage = await structured_call(model, _SourceSummary, messages, node="summarize")
     if not summary.relevant:

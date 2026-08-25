@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from app.graph.state import InvestigationState
 from app.llm import cheap_model, structured_call
 from app.security.defang import defang_text
+from app.security.fences import neutralize, wrap_untrusted
 
 
 class _ReportLLM(BaseModel):
@@ -59,21 +60,22 @@ _SYSTEM = (
 def _pack(state: InvestigationState) -> str:
     groups = {"legitimizing": [], "suspicious": [], "unverifiable": []}
     for f in state.findings:
-        groups[f.direction].append(f.claim)
+        groups[f.direction].append(neutralize(f.claim))
     band = state.assessment.band if state.assessment else "UNKNOWN"
     # Counts stated outside the delimiters, as trusted framing: left to infer
     # them from the lists inside <<<EVIDENCE>>>, the model wrote "shows some
     # signals consistent with known scam patterns" onto a LOW-band report.
     counts = ", ".join(f"{k}={len(v)}" for k, v in groups.items())
-    return (
-        f"Risk band (already decided, do not change): {band}\n"
-        f"Finding counts (authoritative): {counts}\n"
-        "<<<EVIDENCE>>>\n"
+    inner = (
         f"Legitimizing: {groups['legitimizing']}\n"
         f"Suspicious: {groups['suspicious']}\n"
         f"Unverifiable: {groups['unverifiable']}\n"
-        f"Unresolved: {state.unresolved_questions}\n"
-        "<<<END>>>"
+        f"Unresolved: {[neutralize(u) for u in state.unresolved_questions]}"
+    )
+    return (
+        f"Risk band (already decided, do not change): {band}\n"
+        f"Finding counts (authoritative): {counts}\n"
+        + wrap_untrusted("EVIDENCE", inner)
     )
 
 
