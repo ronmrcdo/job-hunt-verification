@@ -71,8 +71,6 @@ services:
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
       NODE_ENV: development
-    depends_on:
-      - api-http
 
   # SMTP sink for local dev. To route Supabase Auth mail here, set config.toml
   # [auth.email.smtp] to host.docker.internal:1025.
