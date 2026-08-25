@@ -22,5 +22,7 @@ def test_pins_created_at_after_null_uid_guard():
 
 
 def test_verify_rls_has_created_at_spoof_case():
-    assert "case 13" in VERIFY
-    assert "created_at" in VERIFY
+    assert "case 19" in VERIFY
+    # Unique to the new case — proves THIS regression case is present, not a
+    # pre-existing one that merely mentions created_at.
+    assert "created_at was not pinned" in VERIFY
