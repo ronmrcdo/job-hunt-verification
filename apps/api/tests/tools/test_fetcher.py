@@ -1,6 +1,12 @@
 import httpx, respx, pytest
 from app.tools.fetcher import safe_fetch
 
+
+def test_settings_expose_a_short_connect_timeout():
+    from app.config import settings
+    assert settings.fetch_connect_timeout_s <= 10
+    assert settings.fetch_connect_timeout_s < settings.fetch_timeout_s
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetches_public_page(monkeypatch):

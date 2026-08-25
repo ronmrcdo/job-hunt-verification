@@ -23,6 +23,9 @@ def _is_public(ip: str) -> bool:
     return not (
         addr.is_private or addr.is_loopback or addr.is_link_local
         or addr.is_multicast or addr.is_reserved or addr.is_unspecified
+        # L5: also reject shared/CGNAT (100.64.0.0/10) and any other non-global
+        # range. Additive — never weakens the explicit checks above.
+        or not addr.is_global
     )
 
 

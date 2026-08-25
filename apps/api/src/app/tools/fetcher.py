@@ -63,7 +63,10 @@ async def safe_fetch(url: str, *, max_bytes: int = 2_000_000) -> FetchResult:
 
         try:
             async with httpx.AsyncClient(
-                timeout=settings.fetch_timeout_s,
+                timeout=httpx.Timeout(
+                    settings.fetch_timeout_s,
+                    connect=settings.fetch_connect_timeout_s,
+                ),
                 follow_redirects=False,
                 verify=True,
             ) as client:

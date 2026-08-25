@@ -8,11 +8,12 @@ is a soft "unavailable" (None), never treated as a suspicious signal
 """
 import json
 from datetime import date, datetime
+from urllib.parse import quote
 from app.tools.fetcher import safe_fetch
 
 
 async def domain_age_days(domain: str, *, today: date) -> int | None:
-    res = await safe_fetch(f"https://rdap.org/domain/{domain}")
+    res = await safe_fetch(f"https://rdap.org/domain/{quote(domain, safe='')}")
     if not res.ok:
         return None
     try:
