@@ -641,4 +641,40 @@ begin
   raise notice 'Case 17 PASS';
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 18: blocked_email_domains is not client-readable (20260826000000).
+-- The table backs the disposable-email signup gate; reject_disposable_email()
+-- reads it as owner (SECURITY DEFINER, bypassing RLS), so deny-all RLS here is
+-- invisible to signups (Case 10 still passes). As `authenticated`, a SELECT
+-- must return 0 rows even though the table is non-empty for the owner. Seed a
+-- row as the bypassing role first to prove it's suppression, not emptiness.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  v_owner int;
+  v_client int;
+begin
+  reset role;  -- owner bypasses RLS
+  select count(*) into v_owner from blocked_email_domains;
+  if v_owner = 0 then
+    raise exception 'Case 18 FAILED: blocked_email_domains empty for owner (seed list missing?)';
+  end if;
+
+  set local role authenticated;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text,
+    true);
+
+  select count(*) into v_client from blocked_email_domains;
+  reset role;
+
+  if v_client <> 0 then
+    raise exception 'Case 18 FAILED: authenticated read % blocked_email_domains rows (expected 0)', v_client;
+  end if;
+
+  raise notice 'Case 18 OK: blocked_email_domains deny-all to authenticated (% rows for owner)', v_owner;
+end $$;
+
+reset role;
+
 rollback;
