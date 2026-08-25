@@ -3,7 +3,12 @@ at AI verifiers, embedded in fetched/pasted content (spec §9.2).
 
 Legitimate employers don't embed instructions to AI verifiers. A hit is
 converted into a HIGH-severity suspicious finding, turning the attack
-surface into a signal.
+surface into a signal. This scanner is a best-effort SIGNAL BOOSTER, not the
+injection guardrail — it matches only known literal phrasings and is trivially
+evadable by paraphrase. The actual defense against prompt injection is
+structural: untrusted content is fenced via app.security.fences.wrap_untrusted
+(so it cannot forge delimiters) and the analysis LLM has no verdict/band field
+(spec §1.1). Never rely on this scanner as the sole injection defense.
 """
 import re
 from app.graph.state import InvestigationState, Finding
