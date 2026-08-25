@@ -194,11 +194,21 @@ link the user clicks (`{{ .ConfirmationURL }}`) is built by GoTrue from
 `SITE_URL` / `API_EXTERNAL_URL` and stays the public domain.
 
 **The route answers internal callers only.** It returns the template only when
-the request carries none of `x-forwarded-for` / `x-forwarded-host` /
-`x-forwarded-proto` (Traefik sets all three on anything it forwards, and an
-outside client cannot strip them) **and** its `Host` is in
-`EMAIL_TEMPLATE_ALLOWED_HOSTS`. Everything else gets a **404, not a 403** — the
-public domain should not confirm the path exists.
+the request carries neither `x-forwarded-server` nor `x-real-ip` **and** its
+`Host` is in `EMAIL_TEMPLATE_ALLOWED_HOSTS`. Everything else gets a **404, not a
+403** — the public domain should not confirm the path exists.
+
+Traefik sets `x-forwarded-server` to its own hostname on every request it
+forwards, and strips any client-supplied `X-Forwarded-*` / `X-Real-Ip` before
+that unless the remote is a configured trusted IP, so neither can be spoofed
+from outside (`pkg/middlewares/forwardedheaders/forwarded_header.go`).
+
+> Do **not** gate on `x-forwarded-host` / `-port` / `-proto` / `-for`. Next's
+> own server fills those in on every request, proxied or not
+> (`next/dist/server/base-server.js`, "Update the `x-forwarded-*` headers"), so
+> a check on their presence rejects GoTrue too and the route 404s everything.
+> That was the original bug; `app/__tests__/email-templates.test.ts` now builds
+> its internal fixture with those headers present to keep it caught.
 
 > `https://<WEB_HOST>/emails/confirmation.html` returning 404 is **correct**.
 > Verify from inside the network instead:

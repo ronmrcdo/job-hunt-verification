@@ -22,9 +22,18 @@ const TEMPLATES = new Set([
 // app/auth/callback/route.ts.
 const DEFAULT_ALLOWED_HOSTS = "web:3000,127.0.0.1:3000,localhost:3000";
 
-// Traefik sets all three on anything it forwards and an outside client cannot
-// strip them, so their presence means the request came in off the public domain.
-const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"];
+// Traefik sets both on anything it forwards, so their presence means the request
+// came in off the public domain. They also cannot be spoofed from outside:
+// x-forwarded-server is overwritten with Traefik's own hostname on every request,
+// and every client-supplied X-Forwarded-*/X-Real-Ip is stripped first unless the
+// remote is a configured trusted IP (traefik/pkg/middlewares/forwardedheaders/
+// forwarded_header.go, ServeHTTP + rewrite).
+//
+// Deliberately NOT x-forwarded-host/port/proto/for: Next's server fills those in
+// itself on every request, proxied or not (next/dist/server/base-server.js,
+// "Update the `x-forwarded-*` headers"), so testing for them rejects the internal
+// callers too and the route 404s everything.
+const PROXY_HEADERS = ["x-forwarded-server", "x-real-ip"];
 
 function isInternal(request: Request): boolean {
   if (PROXY_HEADERS.some((header) => request.headers.has(header))) return false;
