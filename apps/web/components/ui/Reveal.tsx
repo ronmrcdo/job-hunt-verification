@@ -30,7 +30,13 @@ export function Reveal({ children, className, style }: RevealProps) {
       variants={motionPreset.staggerParent}
       initial="hidden"
       whileInView="visible"
-      viewport={{ once: true, amount: 0.2 }}
+      // `amount` becomes the IntersectionObserver threshold, which is measured
+      // against this element's OWN box — a fractional value is unreachable for a
+      // section taller than 1/amount viewports (the report page wraps its whole
+      // findings column in one <Reveal>, so a long report never crossed 0.2 and
+      // stayed at the `hidden` variant: a blank column). "some" is threshold 0,
+      // so the entrance fires on first contact whatever the section's height.
+      viewport={{ once: true, amount: "some" }}
     >
       {children}
     </motion.div>

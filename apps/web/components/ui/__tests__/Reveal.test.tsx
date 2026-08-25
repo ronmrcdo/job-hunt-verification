@@ -35,6 +35,7 @@ vi.mock("framer-motion", async (importOriginal) => {
           ...rest,
           "data-variants": variants ? JSON.stringify(variants) : undefined,
           "data-transition": transition ? JSON.stringify(transition) : undefined,
+          "data-viewport": viewport ? JSON.stringify(viewport) : undefined,
         },
         children,
       );
@@ -52,6 +53,17 @@ const variantsOf = (el: Element) =>
   JSON.parse(el.getAttribute("data-variants") ?? "null");
 const transitionOf = (el: Element) =>
   JSON.parse(el.getAttribute("data-transition") ?? "null");
+const viewportOf = (el: Element) =>
+  JSON.parse(el.getAttribute("data-viewport") ?? "null");
+
+// Framer hands `amount` straight to IntersectionObserver as `threshold`,
+// mapping the names the same way (framer-motion/dist/es/motion/features/
+// viewport/index.mjs).
+const THRESHOLD_NAMES: Record<string, number> = { some: 0, all: 1 };
+const thresholdOf = (el: Element): number => {
+  const amount = viewportOf(el)?.amount ?? "some";
+  return typeof amount === "number" ? amount : THRESHOLD_NAMES[amount];
+};
 
 beforeEach(() => {
   reducedMotion = false;
@@ -70,6 +82,29 @@ describe("Reveal (unit)", () => {
     expect(root).toHaveClass("wrap");
     expect(root.style.gap).toBe("1rem");
     expect(variantsOf(root).visible.transition.staggerChildren).toBe(0.08);
+  });
+
+  // Regression: a <Reveal> can wrap a section far taller than the viewport —
+  // the report page wraps its whole findings column in one, and a 36-finding
+  // report runs to several screens. The browser measures intersectionRatio
+  // against the TARGET's own box, so a section 5x the viewport height tops out
+  // near 0.2 and anything taller can never reach it. A fractional `amount`
+  // therefore leaves whileInView unfired forever and every child stranded on
+  // the `hidden` variant at opacity 0 — a blank white column.
+  it("enters on a threshold a section taller than the viewport can still cross", () => {
+    const { container } = render(
+      <Reveal>
+        <span>tall section</span>
+      </Reveal>,
+    );
+    const root = container.firstElementChild as HTMLElement;
+
+    // A 36-finding report column measures roughly 6000px in a 900px viewport,
+    // so its intersection ratio can never exceed ~0.15.
+    const tallestReachableRatio = 900 / 6000;
+    expect(thresholdOf(root)).toBeLessThanOrEqual(tallestReachableRatio);
+    // Still a once-only entrance.
+    expect(viewportOf(root).once).toBe(true);
   });
 });
 
