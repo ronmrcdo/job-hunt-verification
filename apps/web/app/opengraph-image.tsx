@@ -39,10 +39,11 @@ export default function Image() {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ fontSize: 76, fontWeight: 500, lineHeight: 1.1 }}>
-            Check a job posting
-            <br />
-            before you apply.
+          {/* satori has no <br /> and refuses any multi-child element without an
+              explicit display — each headline line is its own flex row. */}
+          <div style={{ display: "flex", flexDirection: "column", fontSize: 76, fontWeight: 500, lineHeight: 1.1 }}>
+            <div style={{ display: "flex" }}>Check a job posting</div>
+            <div style={{ display: "flex" }}>before you apply.</div>
           </div>
           <div style={{ fontSize: 30, marginTop: 32, color: "#5A5A55", maxWidth: 900, lineHeight: 1.4 }}>
             {SITE_DESCRIPTION}
