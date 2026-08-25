@@ -698,6 +698,29 @@ begin
   raise notice 'Case 19 PASS: created_at pinned to now() on client insert';
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 20 (M2, 20260826121000): an oversized submission field is rejected
+-- by the DB, not just by the client. A 10k-char company_name must violate
+-- the size constraint.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  uid uuid := gen_random_uuid();
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', uid)::text, true);
+  set local role authenticated;
+  begin
+    insert into investigations (user_id, submission)
+      values (uid, jsonb_build_object('job_text', 'x',
+              'company_name', repeat('a', 10000)));
+    reset role;
+    raise exception 'Case 20 FAIL: oversized company_name was accepted';
+  exception when check_violation then
+    reset role;
+    raise notice 'Case 20 PASS: oversized submission field rejected';
+  end;
+end $$;
+
 reset role;
 
 rollback;
