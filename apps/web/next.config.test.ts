@@ -21,5 +21,8 @@ describe("security headers", () => {
       csp.split(";").map((d) => d.trim()).find((d) => d.startsWith(name)) ?? "";
     expect(directive("script-src")).toContain("https://challenges.cloudflare.com");
     expect(directive("frame-src")).toContain("https://challenges.cloudflare.com");
+    // Next.js App Router injects inline bootstrap scripts — script-src must
+    // permit them or every page's JS is blocked at runtime.
+    expect(directive("script-src")).toContain("'unsafe-inline'");
   });
 });

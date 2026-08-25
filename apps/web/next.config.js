@@ -19,18 +19,23 @@ const nextConfig = {
           },
           {
             // Report pages render only first-party assets + Supabase (auth,
-            // realtime websocket). No inline-eval; keep 'unsafe-inline' only
-            // for styles until nonces are wired. connect-src must allow the
-            // Supabase origin — this template uses a wildcard https/wss; pin it
-            // to NEXT_PUBLIC_SUPABASE_URL if you prefer a stricter policy.
+            // realtime websocket). 'unsafe-inline' is required in script-src
+            // because Next.js App Router injects inline bootstrap/hydration
+            // scripts (and no 'nonce'/'strict-dynamic' is wired — that needs a
+            // per-request nonce set in middleware, which forces dynamic
+            // rendering; see the CSP note in docs). The high-value protections
+            // (frame-ancestors, HSTS, nosniff, referrer) are unaffected by this.
+            // connect-src uses a wildcard https/wss; pin it to
+            // NEXT_PUBLIC_SUPABASE_URL if you prefer a stricter policy.
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
               "img-src 'self' data:",
               "style-src 'self' 'unsafe-inline'",
-              // Cloudflare Turnstile loads its script and renders its challenge
-              // in an iframe from challenges.cloudflare.com (auth captcha).
-              "script-src 'self' https://challenges.cloudflare.com",
+              // 'unsafe-inline': Next's inline bootstrap scripts (see above).
+              // Cloudflare Turnstile loads api.js + renders its challenge iframe
+              // from challenges.cloudflare.com (auth captcha).
+              "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
               "frame-src https://challenges.cloudflare.com",
               "connect-src 'self' https: wss:",
               "frame-ancestors 'none'",
