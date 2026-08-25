@@ -74,6 +74,16 @@ describe("StepList", () => {
     expect(screen.getByText("CASE 4F2C-1180 · 2 of 3 steps closed")).toBeTruthy();
   });
 
+  it("shows a loading skeleton (not a real step row) when no steps have arrived yet", () => {
+    render(<StepList steps={[]} caseId="4F2C-1180" />);
+
+    // A polite status stands in for the missing rows...
+    expect(screen.getByRole("status")).toHaveTextContent("Loading steps");
+    // ...and no real StepRow is rendered, nor the "0 of 0" case header.
+    expect(document.querySelector("[data-step-state]")).toBeNull();
+    expect(screen.queryByText(/steps closed/)).toBeNull();
+  });
+
   it("renders rows in display_order regardless of array order", () => {
     const steps: InvestigationStep[] = [
       step({ step_key: "b", label: "Second", display_order: 2, status: "pending" }),
