@@ -4,7 +4,7 @@
 import { ContactEmail, LegalLink, LegalPage, LegalSection } from "../../components/legal/LegalPage";
 
 export const metadata = {
-  title: "Disclaimer & Terms of Use — Jobverifai",
+  title: "Disclaimer & Terms of Use",
   description:
     "What Jobverifai's reports are (and aren't), and the rules for using the service.",
 };
@@ -60,8 +60,8 @@ export default function Page() {
           <li>use reports to harass, defame, or target any person or company.</li>
         </ul>
         <p>
-          We enforce this with rate limiting and may throttle, suspend, or delete accounts that
-          abuse the service.
+          We enforce this with rate limiting and a bot check (a captcha) on sign-up and sign-in,
+          and may throttle, suspend, or delete accounts that abuse the service.
         </p>
       </LegalSection>
 

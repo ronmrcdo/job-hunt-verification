@@ -35,6 +35,23 @@ describe("/privacy", () => {
     expect(contact.length).toBeGreaterThan(0);
     expect(contact[0]).toHaveAttribute("href", "mailto:contact@ronmrcdo.dev");
   });
+
+  it("states that only the password is hashed — never the email", () => {
+    render(<PrivacyPage />);
+    // The email is the login identifier and is stored in the clear; the
+    // wording must not imply it is hashed alongside the password.
+    expect(
+      screen.getAllByText((_, node) =>
+        (node?.textContent ?? "").includes("only the password is stored as a hash"),
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("discloses Cloudflare Turnstile as a third-party bot check", () => {
+    render(<PrivacyPage />);
+    expect(screen.getAllByText(/Cloudflare/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Turnstile/).length).toBeGreaterThan(0);
+  });
 });
 
 describe("/terms", () => {
@@ -49,6 +66,8 @@ describe("/terms", () => {
     expect(screen.getAllByText(/background check/i).length).toBeGreaterThan(0);
     // Acceptable use covers automated abuse.
     expect(screen.getAllByText(/rate.?limit/i).length).toBeGreaterThan(0);
+    // The recently-added sign-in bot check is named as an enforcement measure.
+    expect(screen.getAllByText(/bot check|captcha/i).length).toBeGreaterThan(0);
   });
 });
 

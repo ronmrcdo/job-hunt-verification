@@ -2,6 +2,7 @@ import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { FlowProvider } from "../lib/flow-context";
 import { CookieBanner } from "../components/site/CookieBanner";
+import { baseMetadata } from "../lib/site";
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
@@ -10,10 +11,11 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
-export const metadata = {
-  title: "Jobverifai",
-  description: "Investigation report",
-};
+// Site-wide SEO defaults (title template, description, Open Graph, Twitter
+// card, canonical, robots). Pages override only what differs. The landing
+// page is a Client Component and can't export metadata, so it relies on the
+// `title.default` and Open Graph defined here.
+export const metadata = baseMetadata;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

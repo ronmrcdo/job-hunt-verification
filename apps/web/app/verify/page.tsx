@@ -8,6 +8,14 @@ import { recentInvestigations } from "../../lib/investigations";
 import { SiteHeader } from "../../components/site/SiteHeader";
 import { NewCheckForm } from "../../components/verify/NewCheckForm";
 import { RecentChecks } from "../../components/verify/RecentChecks";
+import { NOINDEX } from "../../lib/site";
+
+// The signed-in home. Behind auth and personalised, so it must never be
+// indexed — middleware already gates it; this keeps crawlers out too.
+export const metadata = {
+  title: "Check a job",
+  robots: NOINDEX,
+};
 
 export default async function Page() {
   const supabase = await createClient();

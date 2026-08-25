@@ -5,7 +5,7 @@
 import { ContactEmail, LegalLink, LegalPage, LegalSection } from "../../components/legal/LegalPage";
 
 export const metadata = {
-  title: "How We Handle Your Data — Jobverifai",
+  title: "How We Handle Your Data",
   description:
     "What happens to a job posting when you run a check: how the AI processes it, and what we never do with it.",
 };

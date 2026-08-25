@@ -8,6 +8,14 @@ import { SiteHeader } from "../../components/site/SiteHeader";
 import { MicroLabel } from "../../components/ui/MicroLabel";
 import { AuthForm } from "../../components/auth/AuthForm";
 import { QueuedCard } from "../../components/auth/QueuedCard";
+import { NOINDEX } from "../../lib/site";
+
+// The sign-in form is a utility page, not a search landing spot; keep it out
+// of the index while still giving it a real tab title.
+export const metadata = {
+  title: "Sign in",
+  robots: NOINDEX,
+};
 
 export default async function Page() {
   const supabase = await createClient();

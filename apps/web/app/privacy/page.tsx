@@ -1,11 +1,11 @@
 // /privacy — the full privacy policy. Plain-language and specific to what the
-// product actually does: self-hosted infrastructure, Google sign-in and
-// Resend as the only named third parties, IP-based rate limiting, and
-// visitor-count-only analytics gated by the cookie banner.
+// product actually does: self-hosted infrastructure; Google sign-in, Resend,
+// and Cloudflare Turnstile as the named third parties; IP-based rate limiting;
+// and visitor-count-only analytics gated by the cookie banner.
 import { ContactEmail, LegalPage, LegalSection } from "../../components/legal/LegalPage";
 
 export const metadata = {
-  title: "Privacy Policy — Jobverifai",
+  title: "Privacy Policy",
   description:
     "What Jobverifai collects, the services it relies on, and how to reach us about your data.",
 };
@@ -25,8 +25,10 @@ export default function Page() {
     >
       <LegalSection number="01" heading="What we collect">
         <p>
-          <strong>Your account.</strong> An email address and a password (stored only as a hash),
-          or — if you sign in with Google — the name and email address Google shares with us.
+          <strong>Your account.</strong> An email address and a password. Your email is your login
+          identifier and the address we send account mail to, so it&rsquo;s stored as you entered
+          it; only the password is stored as a hash, never in the clear. If you sign in with Google
+          instead, we store the name and email address Google shares with us, and no password.
         </p>
         <p>
           <strong>Your submissions.</strong> The job links, postings, and recruiter messages you
@@ -41,7 +43,7 @@ export default function Page() {
 
       <LegalSection number="02" heading="Services we rely on">
         <p>
-          Everything runs on servers we operate ourselves, with two exceptions — both used only
+          Everything runs on servers we operate ourselves, with three exceptions — each used only
           for what&rsquo;s named here:
         </p>
         <ul>
@@ -54,6 +56,13 @@ export default function Page() {
             <strong>Resend</strong> — transactional email. Resend receives your email address to
             deliver verification emails and password resets. It sends nothing else, and no
             marketing.
+          </li>
+          <li>
+            <strong>Cloudflare Turnstile</strong> — a bot check on sign-up and sign-in. The
+            challenge runs in your browser and Cloudflare receives your IP address and your
+            interaction with it to confirm you&rsquo;re a real person, then returns a one-time
+            token. It sees nothing about your account, and we use it only to keep automated abuse
+            off the auth pages.
           </li>
         </ul>
         <p>We don&rsquo;t use ad networks, tracking pixels, or data brokers.</p>
