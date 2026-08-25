@@ -52,14 +52,17 @@ RUN pnpm build
 # ── prod: runtime only. `output: "standalone"` (next.config.js) emits a
 # self-contained server.js + the traced subset of node_modules under
 # .next/standalone; .next/static is NOT traced into it and must be copied
-# alongside. There is no `public/` dir in this app — add a COPY for it here if
-# one is ever introduced, or its assets 404.
+# alongside. Same for emails/ — the GoTrue auth email templates, read at request
+# time by app/emails/[template]/route.ts. Without that COPY every /emails/*.html
+# fetch 500s and no auth mail goes out. There is no `public/` dir in this app —
+# add a COPY for it here if one is ever introduced, or its assets 404.
 FROM base AS prod
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/emails ./emails
 USER node
 # Deliberately no EXPOSE: nothing publishes this port in production. Traefik
 # reaches the container over the shared network and is told the port outright
