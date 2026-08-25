@@ -19,9 +19,17 @@ _STRAY = re.compile(r"<<<|>>>")
 
 
 def neutralize(text: str | None) -> str:
-    """Remove every `<<<`/`>>>` fence token from untrusted content."""
-    text = _PAIR.sub("", text or "")
-    return _STRAY.sub("", text)
+    """Remove every `<<<`/`>>>` fence token from untrusted content, iterating to
+    a fixpoint so a deletion can never re-form a fence at the junction it
+    creates (e.g. "<<" + ">>>" + "<" must not collapse to "<<<"). The string
+    strictly shrinks each pass, so this terminates; at the fixpoint no `<<<` or
+    `>>>` remains."""
+    text = text or ""
+    while True:
+        stripped = _STRAY.sub("", _PAIR.sub("", text))
+        if stripped == text:
+            return stripped
+        text = stripped
 
 
 def wrap_untrusted(label: str, text: str | None) -> str:

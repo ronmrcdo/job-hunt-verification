@@ -1,3 +1,5 @@
+import pytest
+
 from app.security.fences import neutralize, wrap_untrusted
 
 
@@ -16,3 +18,14 @@ def test_wrap_untrusted_cannot_be_escaped():
     assert "<<<EVIDENCE>>>" not in block
     assert block.startswith("<<<PAGE>>>\n")
     assert block.endswith("\n<<<END>>>")
+
+
+@pytest.mark.parametrize("payload", [
+    "<<>>><", "<<<<<<END>>>>>>", "<< <<< >>> >", ">>><<<",
+    "<<" + ">>>" + "<<" + ">>>" + "<", "<<<E>>><<<E>>>", "a <<<END>>> b",
+])
+def test_neutralize_is_closed_under_reform(payload):
+    # A deletion must never re-form a fence at the junction it creates (e.g.
+    # "<<" + ">>>" + "<" collapses to "<<<" after one non-fixpoint pass).
+    out = neutralize(payload)
+    assert "<<<" not in out and ">>>" not in out
