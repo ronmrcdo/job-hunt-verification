@@ -90,6 +90,7 @@ loudly instead of booting a half-configured stack.
 | `INNGEST_BASICAUTH_USERS` | ✔ (dashboard) | htpasswd line(s) for the Inngest dashboard. **Do not double the `$`** (see gotchas). |
 | `NEXT_PUBLIC_SUPABASE_URL` | ✔ | **Build-time** — inlined into the web bundle. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✔ | **Build-time** — inlined into the web bundle. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | ✔ | **Build-time** — Cloudflare Turnstile **site** key for the auth captcha; inlined into the web bundle. Must pair with `GOTRUE_SECURITY_CAPTCHA_SECRET` on the Supabase stack (§3d), or sign-in/sign-up fails. |
 | `WEB_HOST` / `INNGEST_HOST` | — | Traefik router hostnames. |
 | model routing (`CHEAP_MODEL`, `STRONG_MODEL`, `*_REASONING_EFFORT`, `STRUCTURED_OUTPUT_*`, `OPENAI_BASE_URL`, `COST_PRICES_JSON`) | — | Compose has sane defaults; override per deployment. |
 
@@ -136,13 +137,31 @@ Coolify** and must set, on the Auth (GoTrue) service:
 - `GOTRUE_MAILER_AUTOCONFIRM=false` — require email confirmation before a new
   account can sign in (mirrors `[auth.email] enable_confirmations = true` in
   `config.toml`).
-- A captcha provider + secret (Turnstile or hCaptcha) — mirrors
-  `[auth.captcha]` in `config.toml`. GoTrue's captcha env vars are
-  `GOTRUE_SECURITY_CAPTCHA_ENABLED`, `GOTRUE_SECURITY_CAPTCHA_PROVIDER`, and
-  `GOTRUE_SECURITY_CAPTCHA_SECRET`.
+- A captcha provider + secret (Turnstile) — mirrors `[auth.captcha]` in
+  `config.toml`. GoTrue's captcha env vars are `GOTRUE_SECURITY_CAPTCHA_ENABLED=true`,
+  `GOTRUE_SECURITY_CAPTCHA_PROVIDER=turnstile`, and `GOTRUE_SECURITY_CAPTCHA_SECRET=<your Turnstile SECRET key>`.
 
 Neither setting is read from this repo's `config.toml` in production — that
 file only applies when running the Supabase CLI locally.
+
+**Turnstile is a two-key pair — both halves must be set or auth breaks.** Create
+one Turnstile widget in the Cloudflare dashboard (add the production hostname,
+e.g. `jobverifai.ronmrcdo.dev`, to its allowed domains); it yields a **site
+key** and a **secret key**:
+
+| Key | Env var | Where it goes | Why |
+|---|---|---|---|
+| Site (public) | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | this compose stack's **web build arg** (§3a) — build-time | the browser widget renders with it and produces a token |
+| Secret | `GOTRUE_SECURITY_CAPTCHA_SECRET` | the **Supabase (GoTrue) stack** in Coolify | GoTrue verifies the token against it on signup/sign-in |
+
+With captcha enabled on GoTrue, a request **without** a valid token is rejected —
+so the web bundle must carry a working site key. The frontend widget lives in
+`apps/web/components/auth/AuthForm.tsx` and passes the token via
+`options.captchaToken`; changing `NEXT_PUBLIC_TURNSTILE_SITE_KEY` needs
+`up -d --build` (it is baked into the bundle). For local dev, use Cloudflare's
+always-pass **test** keys (site `1x00000000000000000000AA`, secret
+`1x0000000000000000000000000000000AA`) — see `apps/web/.env.example` and
+`scripts/RUNBOOK.md`.
 
 ---
 
