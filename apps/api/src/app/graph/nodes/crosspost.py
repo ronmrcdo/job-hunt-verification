@@ -15,6 +15,7 @@ empty query list, so it returns early with no sources/findings/cost.
 import re
 from datetime import datetime, timezone
 
+from app.graph.nodes.research import stable_source_id
 from app.graph.state import InvestigationState, Source, Finding
 from app.tools.tavily import tavily_search, build_crosspost_queries
 
@@ -37,7 +38,7 @@ async def job_crosspost_search(state: InvestigationState) -> dict:
         for hit in await tavily_search(q):
             other = _emails(hit.content)
             src = Source(
-                id=f"raw_xp_{abs(hash(hit.url)) % 10_000}",
+                id=stable_source_id("raw_xp", hit.url),
                 url=hit.url,
                 kind="search_result",
                 retrieved_at=datetime.now(timezone.utc),
@@ -49,7 +50,7 @@ async def job_crosspost_search(state: InvestigationState) -> dict:
             # emails from our own submission, but no overlap between them.
             if own and other and not (other & own):
                 findings.append(Finding(
-                    id=f"xp_{abs(hash(hit.url)) % 10_000}",
+                    id=stable_source_id("xp", hit.url),
                     category="cross_source",
                     direction="suspicious",
                     severity="medium",

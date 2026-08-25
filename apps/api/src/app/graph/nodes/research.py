@@ -18,6 +18,7 @@ entity, so those hits are excluded as evidence rather than mistaken for
 verification.
 """
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -35,6 +36,15 @@ from app.security.fences import neutralize, wrap_untrusted
 logger = logging.getLogger(__name__)
 
 EXCERPT_CAP = 2000
+
+
+def stable_source_id(prefix: str, url: str) -> str:
+    """Collision-resistant, process-stable id derived from the URL. Replaces
+    `abs(hash(url)) % 10_000`, whose mod-10k collisions could remap a finding's
+    citation to an unrelated source and whose value is PYTHONHASHSEED-random
+    (L3)."""
+    digest = hashlib.sha256((url or "").encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}_{digest}"
 
 
 class _SourceSummary(BaseModel):
@@ -69,7 +79,7 @@ async def _summarize_hit(hit, model, entities: ExtractedEntities) -> tuple[Sourc
     if not summary.relevant:
         return None, usage
     src = Source(
-        id=f"raw_{abs(hash(hit.url)) % 10_000}",
+        id=stable_source_id("raw", hit.url),
         url=hit.url,
         kind="fetched_page" if fetched.ok else "search_result",
         retrieved_at=datetime.now(timezone.utc),

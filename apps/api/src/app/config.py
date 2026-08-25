@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     structured_output_strict: bool = True
 
     fetch_timeout_s: float = 120.0  # 2 min per HTTP fetch, comfortably under branch_timeout_s (180s)
+    fetch_connect_timeout_s: float = 5.0  # cap TCP connect per hop (L4)
     max_job_text_chars: int = 40_000
     max_fetched_posting_chars: int = 40_000  # cap on url_fetch page text (mirrors max_job_text_chars)
     branch_timeout_s: float = 180.0  # 3 min per fan-out branch, then degrade to unverifiable
