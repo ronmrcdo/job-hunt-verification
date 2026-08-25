@@ -1,49 +1,27 @@
 name: job-hunt-verification
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Local V1 stack: self-hosted Inngest + the Python worker/API + the Next.js web
-# app. Postgres/Auth/Storage come from the Supabase CLI, NOT this file — run
-# `supabase start` first (it manages its own Docker stack on :54321 gateway /
-# :54322 Postgres; see scripts/RUNBOOK.md). Containers here reach that Postgres
-# via the host gateway.
-#
-# Flow: web → Supabase (AFTER INSERT trigger posts via pg_net) → Inngest (below)
-#       → api-worker /api/inngest → runs the graph → writes back to Postgres.
-# ─────────────────────────────────────────────────────────────────────────────
+# Local V1 dev stack: self-hosted Inngest + Python worker/API + Next.js web.
+# Postgres/Auth/Storage come from the Supabase CLI (`supabase start`), NOT this
+# file; containers reach it via the host gateway. See scripts/RUNBOOK.md.
+# Flow: web → Supabase (pg_net trigger) → inngest → api-worker /api/inngest → graph.
 
-# Shared env for the two Python services (same image, different command).
 x-api-env: &api-env
-  # Supabase CLI Postgres on the host (:54322). host.docker.internal is mapped
-  # via extra_hosts below.
   DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54322/postgres
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-  # Empty = real api.openai.com. To use the local llama.cpp service below, set
-  # OPENAI_BASE_URL=http://llama:8080/v1 (plus CHEAP_MODEL/STRONG_MODEL to the
-  # served model id) — start it with `docker compose --profile llm up`.
+  # For the local llama service: set OPENAI_BASE_URL=http://llama:8080/v1 (+ the model ids).
   OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
   TAVILY_API_KEY: ${TAVILY_API_KEY:-}
   CHEAP_MODEL: ${CHEAP_MODEL:-gpt-5.6-luna}
   STRONG_MODEL: ${STRONG_MODEL:-gpt-5.6-luna}
-  # `-` (not `:-`) so an explicit empty value passes through as "omit the param"
-  # (DeepSeek non-thinking mode); only an UNSET var falls back to the default.
+  # `-` not `:-`: an explicit empty value passes through (omit the param); only UNSET falls back.
   CHEAP_REASONING_EFFORT: ${CHEAP_REASONING_EFFORT-low}
   STRONG_REASONING_EFFORT: ${STRONG_REASONING_EFFORT-high}
-  # Structured-output coercion. Defaults are OpenAI-native (strict json_schema).
-  # DeepSeek rejects json_schema ("response_format type is unavailable"), so a
-  # DeepSeek deployment sets STRUCTURED_OUTPUT_METHOD=function_calling and
-  # STRUCTURED_OUTPUT_STRICT=false in the repo-root .env.
   STRUCTURED_OUTPUT_METHOD: ${STRUCTURED_OUTPUT_METHOD:-json_schema}
   STRUCTURED_OUTPUT_STRICT: ${STRUCTURED_OUTPUT_STRICT:-true}
-  # Per-1M-token USD pricing for the cost tracker; unset = $0 (unknown model).
   COST_PRICES_JSON: ${COST_PRICES_JSON:-}
 
 services:
-  # Self-hosted Inngest — the single-binary dev server. Matches the worker
-  # client's is_production=False (DEV_SERVER mode): no signing/event keys
-  # needed. `-u` points it at the worker's serve endpoint; --no-discovery
-  # disables localhost port scanning (useless across containers).
-  # Production upgrade path: `inngest start` + Postgres/Redis/keys and flip the
-  # worker to is_production=True.
+  # Single-binary Inngest dev server. --no-discovery disables cross-container port scanning.
   inngest:
     image: inngest/inngest:latest
     command: inngest dev -u http://api-worker:8000/api/inngest --no-discovery
@@ -52,17 +30,11 @@ services:
     depends_on:
       - api-worker
 
-  # Inngest worker — the ONLY HTTP surface Inngest calls back into.
   api-worker:
-    # Context is the repo root so the image can bake in supabase/ (see the api
-    # Dockerfile + root .dockerignore).
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    # --reload + a bind mount of the source = live reload on host edits. Only
-    # src/ is mounted (the editable `app` package points there); the image's
-    # /app/.venv is left intact. --reload-dir scopes the watcher to src so it
-    # doesn't crawl the venv.
+    # --reload + src bind mount = live reload on host edits; the image's /app/.venv is left intact.
     command: >
       uvicorn app.worker.app:app --host 0.0.0.0 --port 8000
       --reload --reload-dir /app/src
@@ -70,42 +42,27 @@ services:
       - ./apps/api/src:/app/src
     environment:
       <<: *api-env
-      # One var sets both the API and event origins for the SDK client.
       INNGEST_BASE_URL: http://inngest:8288
-      # Puts the SDK in DEV_SERVER mode (no signing/event keys, no signature
-      # verification) to match `inngest dev` above. The client no longer
-      # hardcodes is_production, so this var is what selects the mode —
-      # docker-compose.prod.yml leaves it unset to get CLOUD mode.
+      # DEV_SERVER mode (no keys/signature verification) to match `inngest dev`. prod leaves this unset for CLOUD mode.
       INNGEST_DEV: "1"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000" # /api/inngest, /healthz
 
-
-  # Next.js web app.
   web:
     build:
       context: ./apps/web
-      # Dev stage: deps only, `pnpm dev`. Skips the prod compile (the command +
-      # bind mount below run the watcher against live source instead). Swap to
-      # `target: prod` to build the shippable image from this same Dockerfile.
       target: dev
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-    # Linux: share the host network so BOTH the browser and Next's server-side
-    # Supabase client resolve 127.0.0.1:54321 to the same Supabase CLI gateway
-    # with a single URL. Next listens on host :3000.
-    # Mac/Windows: remove network_mode, add `ports: ["3000:3000"]` +
-    # `extra_hosts: ["host.docker.internal:host-gateway"]`, and point the URL at
-    # host.docker.internal — but note the browser must resolve that name too.
+    # Linux: share the host network so browser + server-side Supabase client resolve 127.0.0.1:54321.
+    # Mac/Windows: drop network_mode, add ports ["3000:3000"] + extra_hosts host.docker.internal,
+    # and point the URL at host.docker.internal (the browser must resolve it too).
     network_mode: host
-    # Run the Next dev server (Fast Refresh) instead of the image's compiled
-    # `pnpm start`, and bind the source in so host edits hot-reload with no
-    # rebuild. The anonymous volumes shadow the bind mount so the Linux-built
-    # node_modules and .next survive (the host copies must not clobber them).
     command: pnpm dev
+    # Anonymous volumes shadow the bind mount so the Linux-built node_modules/.next survive.
     volumes:
       - ./apps/web:/app
       - /app/node_modules
@@ -113,43 +70,25 @@ services:
     environment:
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-      # Dev toolchain needs this; the image bakes NODE_ENV=production.
       NODE_ENV: development
     depends_on:
       - api-http
 
-  # MailHog — catch-all SMTP sink for local dev. Nothing is forced through it
-  # yet; point a mailer at smtp://<host>:1025 and read what it captures at the
-  # web UI on :8025. To route Supabase Auth (sign-up confirmation) emails here,
-  # set the SMTP host/port in supabase/config.toml [auth.email.smtp] to
-  # host.docker.internal:1025 (Supabase runs under its own `supabase start`
-  # stack, not this compose).
+  # SMTP sink for local dev. To route Supabase Auth mail here, set config.toml
+  # [auth.email.smtp] to host.docker.internal:1025.
   mailhog:
     image: mailhog/mailhog:latest
     ports:
       - "1025:1025" # SMTP intake
       - "8025:8025" # web UI (http://localhost:8025)
 
-  # Local OpenAI-compatible LLM — a drop-in substitute for the ChatGPT/OpenAI
-  # API in dev. `llama-server` exposes /v1/chat/completions on :8080; the Python
-  # services reach it at http://llama:8080/v1 when OPENAI_BASE_URL points there.
-  #
-  # Opt-in: gated behind the `llm` profile so a plain `docker compose up` does
-  # NOT pull the image or download a model. Bring it up with:
-  #   OPENAI_BASE_URL=http://llama:8080/v1 \
-  #   CHEAP_MODEL=<served-id> STRONG_MODEL=<served-id> \
-  #   docker compose --profile llm up
-  #
-  # -hf pulls the GGUF from Hugging Face on first run (cached in the named
-  # volume). GPU: swap the image for `:server-cuda` and add a `deploy.resources`
-  # GPU reservation; the default image is CPU-only.
+  # Local OpenAI-compatible LLM. Opt-in behind the `llm` profile (a plain `up` skips it):
+  #   OPENAI_BASE_URL=http://llama:8080/v1 CHEAP_MODEL=<id> STRONG_MODEL=<id> docker compose --profile llm up
+  # GPU: swap image for `:server-cuda` + add a deploy.resources GPU reservation.
   llama:
     image: ghcr.io/ggml-org/llama.cpp:server
     profiles: ["llm"]
-    # --parallel gives the server multiple decode slots so the research node's
-    # bounded-concurrency summaries actually run in parallel instead of
-    # serializing behind one slot. -c is the TOTAL context, split across slots,
-    # so it's scaled up with the slot count.
+    # --parallel gives the research node multiple decode slots; -c is TOTAL context split across them.
     command: >
       -hf ${LLAMA_HF_REPO:-bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M}
       --host 0.0.0.0 --port 8080
@@ -157,19 +96,17 @@ services:
       --parallel ${LLAMA_PARALLEL:-4}
       --jinja
     environment:
-      # Where -hf caches downloaded GGUFs (persisted by the volume below).
       LLAMA_CACHE: /models
     volumes:
       - llama-models:/models
     ports:
-      - "8081:8080" # host access (8080 is taken by api-http); in-network is :8080
+      - "8081:8080" # host access (8080 is api-http); in-network is :8080
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3
-      # Generous: first boot downloads the model before /health goes green.
-      start_period: 300s
+      start_period: 300s # first boot downloads the model before /health goes green
 
 volumes:
   llama-models:

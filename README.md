@@ -87,6 +87,10 @@ migrations under `supabase/migrations/`).
 > **Status:** both paths are built. Per project notes, the V0 synchronous backend
 > is retained; its teardown is deferred until the web app's Supabase migration lands.
 
+> **Deploying / operating V1?** See [`docs/PRODUCTION.md`](docs/PRODUCTION.md) —
+> topology, the two-hop dispatch chain, every production variable, the deploy and
+> first-cutover procedure, operational gotchas, and rollback.
+
 ---
 
 ## The investigation graph

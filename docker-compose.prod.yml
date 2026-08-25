@@ -1,50 +1,21 @@
 name: job-hunt-verification-prod
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PRODUCTION stack. Standalone file — do NOT merge it with docker-compose.yml
-# (that one is dev-only: bind mounts, --reload, host networking, MailHog and
-# llama.cpp). Run it explicitly:
-#
+# Production stack. Standalone — do NOT merge with docker-compose.yml (dev-only).
+# Deploy + operate: docs/PRODUCTION.md. Run:
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
-#
-# Differences from dev, deliberately:
-#   • No source bind mounts, no --reload — the images are the artifact.
-#   • Nothing publishes host ports; Traefik fronts everything over the shared
-#     external coolify network.
-#   • MailHog and llama.cpp are absent by design (dev-only conveniences).
-#
-# What is NOT in this file:
-#   • Inngest. It is deployed as its own Coolify pod (its own `inngest start`
-#     server + whatever state backend it needs). This stack only points at it:
-#     api-worker sends events to INNGEST_BASE_URL, and that Inngest server must
-#     be configured to reach api-worker back at http://<worker>/api/inngest.
-#   • Postgres/Auth/Storage for the application itself. Production points at a
-#     managed or separately-hosted Supabase project via DATABASE_URL /
-#     NEXT_PUBLIC_SUPABASE_*.
-# ─────────────────────────────────────────────────────────────────────────────
 
-# Shared env for the Python services (same image, different command).
 x-api-env: &api-env
-  # Application database — the production Supabase project's Postgres.
-  # Use the pooler/session URI, not a local host gateway.
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
   OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
-  # Empty = real api.openai.com. Set to an OpenAI-compatible gateway if you
-  # front the provider yourself. (The dev-only `llama` service is not here.)
   OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
   TAVILY_API_KEY: ${TAVILY_API_KEY:?TAVILY_API_KEY is required}
   CHEAP_MODEL: ${CHEAP_MODEL:-gpt-5.6-luna}
   STRONG_MODEL: ${STRONG_MODEL:-gpt-5.6-luna}
-  # `-` (not `:-`) so an explicit empty value passes through as "omit the param"
-  # (DeepSeek non-thinking mode); only an UNSET var falls back to the default.
+  # `-` not `:-`: an explicit empty value passes through (omit the param); only UNSET falls back.
   CHEAP_REASONING_EFFORT: ${CHEAP_REASONING_EFFORT-low}
   STRONG_REASONING_EFFORT: ${STRONG_REASONING_EFFORT-high}
-  # Structured-output coercion. Defaults are OpenAI-native (strict json_schema).
-  # DeepSeek rejects json_schema, so a DeepSeek deployment sets
-  # STRUCTURED_OUTPUT_METHOD=function_calling and STRUCTURED_OUTPUT_STRICT=false.
   STRUCTURED_OUTPUT_METHOD: ${STRUCTURED_OUTPUT_METHOD:-json_schema}
   STRUCTURED_OUTPUT_STRICT: ${STRUCTURED_OUTPUT_STRICT:-true}
-  # Per-1M-token USD pricing for the cost tracker; unset = $0 (unknown model).
   COST_PRICES_JSON: ${COST_PRICES_JSON:-}
 
 x-logging: &logging
@@ -55,11 +26,6 @@ x-logging: &logging
 
 services:
   api-worker:
-    # Context is the repo root so the Supabase project (config.toml +
-    # migrations + functions) is baked into the image at /app/supabase — no
-    # bind-mount. To apply migrations:
-    #   docker compose -f docker-compose.prod.yml exec api-worker \
-    #     supabase db push --workdir /app --db-url "$DATABASE_URL"
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -69,7 +35,6 @@ services:
     environment:
       <<: *api-env
       INNGEST_BASE_URL: ${INNGEST_BASE_URL:-http://inngest:8288}
-      # URL Inngest calls back into for app sync and function invocation.
       INNGEST_SERVE_ORIGIN: ${INNGEST_SERVE_ORIGIN:-http://api-worker:8000}
       INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:?INNGEST_SIGNING_KEY is required}
       INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:?INNGEST_EVENT_KEY is required}
@@ -86,6 +51,7 @@ services:
     build:
       context: ./apps/web
       target: prod
+      # NEXT_PUBLIC_* are build-time args baked into the client bundle — a change needs --build, not a restart.
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is required}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?NEXT_PUBLIC_SUPABASE_ANON_KEY is required}
