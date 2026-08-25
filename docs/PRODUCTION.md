@@ -127,6 +127,23 @@ Coolify **injects environment set in its UI into the container**, which can shad
 the compose defaults. If a running container shows an unexpected value for any
 variable above, check the Coolify UI's env settings for that service **first**.
 
+### 3d. Signup-abuse hardening (Supabase Auth)
+
+`supabase/config.toml` governs **only the local dev stack** (`supabase start`).
+The **production self-hosted Supabase stack is configured separately in
+Coolify** and must set, on the Auth (GoTrue) service:
+
+- `GOTRUE_MAILER_AUTOCONFIRM=false` — require email confirmation before a new
+  account can sign in (mirrors `[auth.email] enable_confirmations = true` in
+  `config.toml`).
+- A captcha provider + secret (Turnstile or hCaptcha) — mirrors
+  `[auth.captcha]` in `config.toml`. GoTrue's captcha env vars are
+  `GOTRUE_SECURITY_CAPTCHA_ENABLED`, `GOTRUE_SECURITY_CAPTCHA_PROVIDER`, and
+  `GOTRUE_SECURITY_CAPTCHA_SECRET`.
+
+Neither setting is read from this repo's `config.toml` in production — that
+file only applies when running the Supabase CLI locally.
+
 ---
 
 ## 4. Deploying
@@ -155,6 +172,20 @@ The two migrations that define the dispatch path:
   trigger function that POSTs via `pg_net`.
 
 Both are **idempotent** (`create or replace function`); re-running is safe.
+
+> **Migrate-on-boot risk.** `docker-compose.prod.yml` sets `RUN_MIGRATIONS: "1"`
+> on `api-worker`, so `apps/api/entrypoint.sh` applies **all** pending
+> migrations, as the DB owner, on **every** boot of that container — a restart,
+> a scale event, or `up -d` all trigger it, not just an intentional release.
+> Two consequences:
+> - **An image rollback does not roll back schema.** Rolling `IMAGE_TAG` back
+>   to a previous version does not undo migrations a newer version already
+>   applied; a schema-incompatible rollback needs a manual down-migration.
+> - **For a controlled release** (migrate as its own reviewed step, not
+>   coupled to every container boot), unset `RUN_MIGRATIONS` in
+>   `.env.production` and instead run `supabase db push` as a separate deploy
+>   step — either the `exec api-worker` form shown above, or from CI/CD before
+>   `up -d`.
 
 ---
 

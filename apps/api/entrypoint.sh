@@ -12,7 +12,13 @@ if [ "$RUN_MIGRATIONS" = "1" ]; then
   fi
 
   # Supabase over the internal Docker network terminates TLS at the edge, not on
-  # the Postgres socket, so disable libpq SSL negotiation for the push.
+  # the Postgres socket, so disable libpq SSL negotiation for the push. This is
+  # safe ONLY because DATABASE_URL here reaches Postgres over the internal
+  # `coolify` Docker network (container-to-container), never the public
+  # internet — the traffic is not TLS-protected on the wire. If the DB is ever
+  # reached over a non-local path (a managed/hosted Postgres outside this
+  # Docker network, a public endpoint, a different host), this MUST be
+  # revisited to `PGSSLMODE=require` (or stronger) before that change ships.
   export PGSSLMODE=disable
 
   echo "==> Running database migrations..."
