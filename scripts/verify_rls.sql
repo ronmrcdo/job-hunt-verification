@@ -723,4 +723,64 @@ end $$;
 
 reset role;
 
+-- -----------------------------------------------------------------------
+-- Case 21 (feedback→eval loop, 20260826010000): a user cannot read another
+-- user's feedback. Insert a row as user A, then attempt to SELECT it as user B
+-- under the authenticated role; RLS must return zero rows.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  a uuid := gen_random_uuid();
+  b uuid := gen_random_uuid();
+  inv uuid;
+  visible int;
+begin
+  -- seed an investigation + feedback owned by A (definer context, RLS bypassed)
+  insert into investigations (user_id, submission)
+    values (a, jsonb_build_object('job_text', 'x')) returning id into inv;
+  insert into feedback (investigation_id, user_id, verdict) values (inv, a, 'too_high');
+
+  perform set_config('request.jwt.claims', json_build_object('sub', b)::text, true);
+  set local role authenticated;
+  select count(*) into visible from feedback where user_id = a;
+  reset role;
+  if visible <> 0 then
+    raise exception 'Case 21 FAIL: user B saw % of user A''s feedback rows', visible;
+  end if;
+  raise notice 'Case 21 PASS: feedback is owner-isolated under RLS';
+end $$;
+
+-- -----------------------------------------------------------------------
+-- Case 22 (feedback→eval loop, 20260826010100): eval_candidate is an internal
+-- table — the authenticated role must see zero rows and be denied insert.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  uid uuid := gen_random_uuid();
+  inv uuid;
+  visible int;
+begin
+  insert into investigations (user_id, submission)
+    values (uid, jsonb_build_object('job_text', 'x')) returning id into inv;
+  insert into eval_candidate (investigation_id, submission_snapshot, expected_max_band, promoted_by)
+    values (inv, jsonb_build_object('job_text', 'x'), 'LOW', 'seed@example.com');
+
+  perform set_config('request.jwt.claims', json_build_object('sub', uid)::text, true);
+  set local role authenticated;
+  select count(*) into visible from eval_candidate;
+  if visible <> 0 then
+    reset role;
+    raise exception 'Case 22 FAIL: authenticated saw % eval_candidate rows', visible;
+  end if;
+  begin
+    insert into eval_candidate (investigation_id, submission_snapshot, expected_max_band, promoted_by)
+      values (inv, jsonb_build_object('job_text', 'y'), 'LOW', 'attacker@example.com');
+    reset role;
+    raise exception 'Case 22 FAIL: authenticated was allowed to insert eval_candidate';
+  exception when insufficient_privilege then
+    reset role;
+    raise notice 'Case 22 PASS: eval_candidate is deny-all to authenticated';
+  end;
+end $$;
+
 rollback;
