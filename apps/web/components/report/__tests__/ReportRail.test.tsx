@@ -6,6 +6,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+vi.mock("../../../lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: { getUser: () => Promise.resolve({ data: { user: null } }) },
+    from: () => ({ insert: () => Promise.resolve({ error: null }) }),
+  }),
+}));
+
 import { ReportRail } from "../ReportRail";
 import { toReportViewModel } from "../../../lib/report-view-model";
 import { SAMPLE_HIGH } from "../../../lib/__fixtures__/sample-high";
@@ -15,7 +22,13 @@ function renderRail(id = "abc-123", onReport = vi.fn()) {
   const vm = toReportViewModel(SAMPLE_HIGH.inv);
   return render(
     <FlowProvider>
-      <ReportRail vm={vm} investigationId={id} reported={false} onReport={onReport} />
+      <ReportRail
+        vm={vm}
+        investigationId={id}
+        findings={SAMPLE_HIGH.inv.findings ?? []}
+        reported={false}
+        onReport={onReport}
+      />
     </FlowProvider>,
   );
 }
@@ -37,11 +50,11 @@ describe("ReportRail — report an issue", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /report an issue with this assessment/i }),
     );
+    await userEvent.click(screen.getByRole("radio", { name: /this looks right/i }));
+    await userEvent.click(screen.getByRole("button", { name: /send/i }));
 
-    expect(onReport).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
-      expect(screen.getByText("Thanks — we'll look at it")).toBeInTheDocument();
-    });
+    await waitFor(() => expect(onReport).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Thanks — we'll look at it")).toBeInTheDocument();
   });
 
   it("still offers the check-another action", () => {

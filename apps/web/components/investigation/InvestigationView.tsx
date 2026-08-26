@@ -148,6 +148,7 @@ function Report({ investigation }: { investigation: Investigation }) {
         <ReportRail
           vm={vm}
           investigationId={investigation.id}
+          findings={investigation.findings ?? []}
           reported={reported}
           onReport={() => setReported(true)}
         />
