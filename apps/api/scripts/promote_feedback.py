@@ -25,14 +25,22 @@ DATASET = pathlib.Path(__file__).resolve().parents[1] / "eval" / "dataset.json"
 _BANDS = ("LOW", "MODERATE", "HIGH", "CRITICAL")
 
 
-def candidate_to_case(candidate: dict[str, Any], seq: int) -> dict[str, Any]:
+def candidate_to_case(candidate: dict[str, Any]) -> dict[str, Any]:
     """Dataset-shaped case with a stable, collision-free id.
 
-    id = feedback_<investigation_id[:8]>_<seq>. Two candidates from the same
-    investigation stay distinct by seq. Tags always include 'source:feedback'
-    for provenance; origin_investigation_id keeps traceability back to the run.
+    id = feedback_<investigation_id[:8]>_<candidate_id[:12]>, where
+    candidate_id is the eval_candidate row's own uuid primary key with
+    dashes stripped. Identity-based (not positional): the SAME candidate
+    always maps to the SAME id, so re-offering it (e.g. a retry after a
+    partial failure) is naturally idempotent, and two DIFFERENT candidates
+    for the same investigation always get different ids since their uuids
+    differ. 12 hex chars (48 bits) keeps collisions negligible — a collision
+    would silently skip a candidate, the exact failure this id scheme exists
+    to prevent. Tags always include 'source:feedback' for provenance;
+    origin_investigation_id keeps traceability back to the run.
     """
     inv = str(candidate["investigation_id"])
+    cand_id = str(candidate["id"]).replace("-", "")
     max_band = candidate["expected_max_band"]
     if max_band not in _BANDS:
         raise ValueError(f"bad expected_max_band: {max_band}")
@@ -40,7 +48,7 @@ def candidate_to_case(candidate: dict[str, Any], seq: int) -> dict[str, Any]:
     if "source:feedback" not in tags:
         tags.append("source:feedback")
     return {
-        "id": f"feedback_{inv[:8]}_{seq}",
+        "id": f"feedback_{inv[:8]}_{cand_id[:12]}",
         "description": f"Promoted from feedback on investigation {inv}.",
         "submission": candidate["submission_snapshot"],
         # The loader requires expected_band; fall back to the ceiling when the
@@ -62,24 +70,8 @@ def append_new_cases(
     existing = {c["id"] for c in dataset}
     out = list(dataset)
     added: list[str] = []
-    # Seq is per-investigation so re-promoting one investigation twice yields
-    # _0, _1 rather than colliding. Seeded from ids already in `dataset` (not
-    # just this batch) so a later, separate promotion of the same
-    # investigation continues the sequence instead of recomputing seq=0 and
-    # silently colliding with (skipping) an already-exported case.
-    per_inv: dict[str, int] = {}
     for cand in candidates:
-        inv = str(cand["investigation_id"])
-        if inv not in per_inv:
-            prefix = f"feedback_{inv[:8]}_"
-            max_seq = -1
-            for cid in existing:
-                if cid.startswith(prefix) and cid[len(prefix):].isdigit():
-                    max_seq = max(max_seq, int(cid[len(prefix):]))
-            per_inv[inv] = max_seq + 1
-        seq = per_inv[inv]
-        case = candidate_to_case(cand, seq)
-        per_inv[inv] = seq + 1
+        case = candidate_to_case(cand)
         if case["id"] in existing:
             continue
         existing.add(case["id"])
