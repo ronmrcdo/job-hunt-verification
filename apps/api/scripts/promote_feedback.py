@@ -80,11 +80,37 @@ def append_new_cases(
     return out, added
 
 
+def reconcile(
+    dataset: list[dict[str, Any]], candidates: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[Any]]:
+    """Pure reconciliation between the dataset file and the promoted-candidate
+    rows: appends whatever isn't in the dataset yet (same as `append_new_cases`),
+    and separately reports every candidate DB id whose case ends up present in
+    the resulting dataset — whether appended just now or already there from a
+    prior partial run.
+
+    This is what main() uses to decide which DB rows to mark 'exported', and it
+    fixes two related bugs in a naive "UPDATE ... where status='promoted'"
+    approach: (1) a candidate already in the dataset from an earlier run that
+    crashed before its status update would otherwise never get exported
+    (stranded); (2) a candidate promoted concurrently, after the SELECT but
+    before the UPDATE, would otherwise get marked exported without ever being
+    written to the dataset (silent loss). Scoping export ids to "case is
+    actually present in new_dataset" closes both: presence, not blanket
+    status, is the source of truth for what counts as exported.
+    """
+    new_dataset, _added = append_new_cases(dataset, candidates)
+    present = {c["id"] for c in new_dataset}
+    export_ids = [cand["id"] for cand in candidates if candidate_to_case(cand)["id"] in present]
+    return new_dataset, export_ids
+
+
 def main() -> None:  # pragma: no cover - DB-bound operator entrypoint
     import psycopg  # local import so unit tests need no driver
 
     url = os.environ["PROMOTE_DATABASE_URL"]
     dataset = json.loads(DATASET.read_text())
+    old_ids = {c["id"] for c in dataset}
     with psycopg.connect(url, autocommit=False) as conn:
         rows = conn.execute(
             "select id, investigation_id, submission_snapshot, expected_max_band, "
@@ -94,17 +120,33 @@ def main() -> None:  # pragma: no cover - DB-bound operator entrypoint
         cols = ["id", "investigation_id", "submission_snapshot", "expected_max_band", "expected_band", "tags"]
         candidates = [dict(zip(cols, r)) for r in rows]
 
-        new_dataset, added = append_new_cases(dataset, candidates)
-        if not added:
+        new_dataset, export_ids = reconcile(dataset, candidates)
+        added = [c["id"] for c in new_dataset if c["id"] not in old_ids]
+        if not added and not export_ids:
             print("No new candidates to promote.")
             return
 
-        DATASET.write_text(json.dumps(new_dataset, indent=2) + "\n")
-        conn.execute(
-            "update eval_candidate set status = 'exported', exported_at = now() "
-            "where status = 'promoted'"
-        )
-        # No explicit commit: psycopg3 commits automatically on clean `with` exit.
+        # Ordering matters: write the dataset to a TEMP file first, then update
+        # DB status, then commit, then atomically swap the temp file into place
+        # last. If the process dies before the swap, the DB has committed rows
+        # as 'exported' but DATASET on disk is untouched — a re-run reads the
+        # same (unwritten) dataset, `reconcile` recomputes the same export_ids
+        # (their cases are still absent from the on-disk dataset) and appends
+        # them again, self-healing. The alternative ordering (swap before
+        # commit) risks a crash between the two leaving the dataset file
+        # updated but the DB rows still 'promoted' forever un-exported, which
+        # is exactly the stranding bug this rewrite fixes — so we accept this
+        # smaller window instead.
+        tmp = DATASET.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(new_dataset, indent=2) + "\n")
+        if export_ids:
+            conn.execute(
+                "update eval_candidate set status = 'exported', exported_at = now() "
+                "where id = any(%s)",
+                (export_ids,),
+            )
+        conn.commit()
+        os.replace(tmp, DATASET)
     print(f"Appended {len(added)} case(s): {', '.join(added)}")
     print("Review `git diff apps/api/eval/dataset.json` and open a PR — nothing was committed.")
 

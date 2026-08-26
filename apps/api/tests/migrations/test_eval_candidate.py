@@ -35,3 +35,10 @@ def test_admin_ro_grant_lives_in_later_migration_not_here():
 def test_verify_rls_has_eval_candidate_deny_all_case():
     assert "case 22" in VERIFY
     assert "eval_candidate" in VERIFY
+
+
+def test_one_pending_candidate_per_investigation_partial_unique_index():
+    # Blocks redundant double-promotes while status = 'promoted', but doesn't
+    # block a new candidate once the prior one is 'exported' (partial index).
+    assert "eval_candidate_one_pending_per_investigation" in SQL
+    assert "where status = 'promoted'" in SQL

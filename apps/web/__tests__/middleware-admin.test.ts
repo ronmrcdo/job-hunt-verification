@@ -35,4 +35,10 @@ describe("middleware /admin pre-check", () => {
     await middleware(req("/report/abc"));
     expect(updateSession).toHaveBeenCalledOnce();
   });
+
+  it("does not gate /administrator (segment-exact match, not a prefix match)", async () => {
+    const res = await middleware(req("/administrator"));
+    expect(res.status).toBe(200);
+    expect(updateSession).toHaveBeenCalledOnce();
+  });
 });

@@ -1,6 +1,6 @@
 import json
 
-from scripts.promote_feedback import append_new_cases, candidate_to_case
+from scripts.promote_feedback import append_new_cases, candidate_to_case, reconcile
 
 CAND_A = "11111111-1111-1111-1111-111111111111"
 CAND_B = "22222222-2222-2222-2222-222222222222"
@@ -95,3 +95,43 @@ def test_partial_failure_retry_does_not_duplicate():
     assert added == []
     assert len(out) == 1
     assert out == dataset
+
+
+def test_reconcile_exports_a_stranded_prior_run_candidate():
+    # A prior run wrote candidate A's case to the dataset but crashed before
+    # (or without) marking it 'exported' — status is still 'promoted' in the
+    # DB. reconcile must still put A's id in export_ids even though it isn't
+    # newly appended this run, so it stops being stranded forever.
+    inv = "aaaabbbbcccc"
+    cand_a = _candidate(inv=inv, cand_id=CAND_A)
+    dataset = [candidate_to_case(cand_a)]
+
+    new_dataset, export_ids = reconcile(dataset, [cand_a])
+    assert new_dataset == dataset  # nothing new appended
+    assert export_ids == [CAND_A]
+
+
+def test_reconcile_export_ids_only_includes_candidates_actually_in_dataset():
+    # A candidate whose case never makes it into new_dataset must never be
+    # reported as exportable — this is what prevents a concurrently-promoted
+    # candidate from being marked 'exported' without ever being written out.
+    inv = "aaaabbbbcccc"
+    cand_a = _candidate(inv=inv, cand_id=CAND_A)
+    cand_b = _candidate(inv=inv, cand_id=CAND_B)
+    dataset = [candidate_to_case(cand_a)]  # only A is actually in the dataset
+
+    new_dataset, export_ids = reconcile(dataset, [cand_a, cand_b])
+    b_case_id = candidate_to_case(cand_b)["id"]
+    assert b_case_id not in {c["id"] for c in dataset}
+    # B's case IS appended by reconcile (it's a genuinely new candidate), so
+    # it legitimately becomes present and exportable too.
+    assert b_case_id in {c["id"] for c in new_dataset}
+    assert set(export_ids) == {CAND_A, CAND_B}
+
+
+def test_reconcile_fresh_candidate_is_appended_and_exported():
+    cand = _candidate(inv="aaaabbbbcccc", cand_id=CAND_A)
+    new_dataset, export_ids = reconcile([], [cand])
+    assert len(new_dataset) == 1
+    assert new_dataset[0]["id"] == candidate_to_case(cand)["id"]
+    assert export_ids == [CAND_A]
