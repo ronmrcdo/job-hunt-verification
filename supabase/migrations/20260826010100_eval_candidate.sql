@@ -24,3 +24,11 @@ alter table eval_candidate enable row level security;
 
 -- NOTE: no admin_ro grant here — see 20260826130000_admin_ro_role.sql, whose
 -- guarded block grants INSERT on this table once it exists.
+
+-- At most one PENDING (not-yet-exported) candidate per investigation, so a
+-- redundant double-promote of the same investigation is rejected at the DB.
+-- Partial (status = 'promoted' only): once a candidate is exported its status
+-- flips to 'exported' and the index no longer applies, so a genuinely new
+-- candidate for an already-exported investigation is still allowed.
+create unique index if not exists eval_candidate_one_pending_per_investigation
+  on eval_candidate (investigation_id) where status = 'promoted';

@@ -6,7 +6,8 @@ export async function middleware(request: NextRequest) {
   // reaches the route. Full JWKS verification lives in lib/admin/access.ts.
   // 404, never 403 — no existence leak (app-wide convention). This holds even
   // if a request reaches the Traefik origin around Cloudflare.
-  if (request.nextUrl.pathname.startsWith("/admin")) {
+  const pathname = request.nextUrl.pathname;
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     if (!request.headers.get("cf-access-jwt-assertion")) {
       return new NextResponse(null, { status: 404 });
     }
