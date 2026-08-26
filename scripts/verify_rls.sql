@@ -783,4 +783,36 @@ begin
   end;
 end $$;
 
+-- -----------------------------------------------------------------------
+-- Case 23 (feedback→eval loop, 20260826010000): the feedback INSERT policy's
+-- WITH CHECK must also bind investigation ownership. User B, authenticated,
+-- must be rejected when filing feedback against user A's investigation, even
+-- though the row's user_id would correctly be forced to B by the trigger.
+-- -----------------------------------------------------------------------
+do $$
+declare
+  a uuid := gen_random_uuid();
+  b uuid := gen_random_uuid();
+  inv uuid;
+  visible int;
+begin
+  insert into investigations (user_id, submission)
+    values (a, jsonb_build_object('job_text', 'x')) returning id into inv;
+
+  perform set_config('request.jwt.claims', json_build_object('sub', b)::text, true);
+  set local role authenticated;
+  begin
+    insert into feedback (investigation_id, user_id, verdict) values (inv, b, 'too_high');
+    reset role;
+    raise exception 'Case 23 FAIL: user B was allowed to file feedback on user A''s investigation';
+  exception when insufficient_privilege then
+    reset role;
+    select count(*) into visible from feedback where investigation_id = inv;
+    if visible <> 0 then
+      raise exception 'Case 23 FAIL: rejected insert still left a row behind';
+    end if;
+    raise notice 'Case 23 PASS: feedback insert is bound to the caller''s own investigation';
+  end;
+end $$;
+
 rollback;
