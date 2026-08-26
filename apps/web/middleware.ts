@@ -1,7 +1,16 @@
-import type { NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "./lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  // Cheap first cut for /admin/*: a request with no CF Access assertion never
+  // reaches the route. Full JWKS verification lives in lib/admin/access.ts.
+  // 404, never 403 — no existence leak (app-wide convention). This holds even
+  // if a request reaches the Traefik origin around Cloudflare.
+  if (request.nextUrl.pathname.startsWith("/admin")) {
+    if (!request.headers.get("cf-access-jwt-assertion")) {
+      return new NextResponse(null, { status: 404 });
+    }
+  }
   return updateSession(request);
 }
 
