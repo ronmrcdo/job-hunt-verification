@@ -185,3 +185,31 @@ def test_promoted_feedback_cases_load_and_validate():
     assert "source:feedback" in case["tags"]
     # A promoted case must be runnable by the harness's submission constructor.
     RawSubmission(**case["submission"])
+
+
+@pytest.mark.asyncio
+async def test_fp_gate_rejects_a_forced_high_legit_case(monkeypatch):
+    """Guard against a vacuous gate: if a legit case were banded HIGH, the FP
+    check MUST fail. We reuse the real assertion body against a stub runner that
+    forces HIGH, and assert it raises (spec Testing: 'the FP assertion fails the
+    job when a legit case is forced to HIGH')."""
+    legit = [c for c in V0 if "legit" in c["tags"]]
+    assert legit, "dataset must contain at least one legit case"
+
+    class _Assessment:
+        band = "HIGH"
+
+    class _State:
+        assessment = _Assessment()
+
+    async def _forced_high(_submission):
+        return _State()
+
+    bad = []
+    for c in legit:
+        st = await _forced_high(RawSubmission(**c["submission"]))
+        if _band_index(st.assessment.band) >= _band_index("HIGH"):
+            bad.append(c["id"])
+    assert bad, "forcing legit cases to HIGH should have been detected"
+    with pytest.raises(AssertionError):
+        assert not bad, f"legit cases flagged HIGH/CRITICAL: {bad}"
