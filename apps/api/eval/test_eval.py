@@ -163,3 +163,25 @@ async def test_cost_and_latency_reported(eval_runner):
         assert row["latency_s"] >= 0.0
     over_budget = [r["id"] for r in rows if r["over_budget"]]
     assert not over_budget, f"[{MODEL_CONFIG}] cases over cost budget: {over_budget}"
+
+
+def test_promoted_feedback_cases_load_and_validate():
+    """A source:feedback case built by the promotion script must satisfy the
+    same loader invariants as hand-authored cases (spec Testing)."""
+    from scripts.promote_feedback import candidate_to_case
+
+    case = candidate_to_case(
+        {
+            "investigation_id": "deadbeefcafef00d",
+            "submission_snapshot": {"job_text": "Remote role, apply via email."},
+            "expected_max_band": "MODERATE",
+            "expected_band": None,
+            "tags": ["legit"],
+        },
+        seq=0,
+    )
+    assert case["expected_band"] in ("LOW", "MODERATE", "HIGH", "CRITICAL")
+    assert "job_text" in case["submission"]
+    assert "source:feedback" in case["tags"]
+    # A promoted case must be runnable by the harness's submission constructor.
+    RawSubmission(**case["submission"])
