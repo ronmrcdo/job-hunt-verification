@@ -20,15 +20,27 @@ def test_note_is_length_bounded():
     assert "char_length(note) <= 2000" in SQL
 
 
+def test_wrong_finding_id_is_length_bounded():
+    assert "char_length(wrong_finding_id) <= 200" in SQL
+
+
 def test_rls_enabled_and_scoped_to_owner():
     assert "enable row level security" in SQL
     # own-row insert + select, no update/delete grant anywhere.
     assert "for insert to authenticated" in SQL
-    assert "with check (user_id = auth.uid())" in SQL
+    assert "user_id = auth.uid()" in SQL
     assert "for select to authenticated" in SQL
     assert "using (user_id = auth.uid())" in SQL
     assert "for update" not in SQL
     assert "for delete" not in SQL
+
+
+def test_insert_policy_requires_investigation_ownership():
+    # feedback may only be filed about the caller's OWN investigation: the
+    # WITH CHECK must also verify the referenced investigation belongs to them.
+    assert "from investigations i" in SQL
+    assert "i.user_id = auth.uid()" in SQL
+    assert "i.id = investigation_id" in SQL
 
 
 def test_created_at_and_user_id_are_server_forced():
@@ -54,3 +66,7 @@ def test_migration_does_not_grant_to_admin_ro():
 def test_verify_rls_has_feedback_isolation_case():
     assert "case 21" in VERIFY
     assert "feedback" in VERIFY
+
+
+def test_verify_rls_has_feedback_ownership_case():
+    assert "case 23" in VERIFY

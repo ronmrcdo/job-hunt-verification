@@ -10,7 +10,7 @@ create table if not exists feedback (
   investigation_id uuid not null references investigations(id) on delete cascade,
   user_id uuid not null default auth.uid(),
   verdict text not null check (verdict in ('agree','too_high','too_low')),
-  wrong_finding_id text,
+  wrong_finding_id text check (wrong_finding_id is null or char_length(wrong_finding_id) <= 200),
   note text check (note is null or char_length(note) <= 2000),
   created_at timestamptz not null default now()
 );
@@ -23,10 +23,19 @@ create unique index if not exists feedback_user_investigation_uniq
 alter table feedback enable row level security;
 
 -- Own-row insert/select only. No update/delete grant to clients at all.
+-- WITH CHECK also pins the referenced investigation to the caller: feedback
+-- may only be filed about the caller's OWN investigation (spec trust
+-- boundary), never one belonging to another user.
 drop policy if exists feedback_insert_own on feedback;
 create policy feedback_insert_own on feedback
   for insert to authenticated
-  with check (user_id = auth.uid());
+  with check (
+    user_id = auth.uid()
+    and exists (
+      select 1 from investigations i
+      where i.id = investigation_id and i.user_id = auth.uid()
+    )
+  );
 
 drop policy if exists feedback_select_own on feedback;
 create policy feedback_select_own on feedback
