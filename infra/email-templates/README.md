@@ -7,13 +7,18 @@ These HTML files are fetched over HTTP GET by GoTrue at send time
 ## How they're served
 
 A dedicated `email-templates` service (Caddy, `docker-compose.prod.yml`) serves
-this directory over the shared external `coolify` network. It has **no Traefik
+these templates over the shared external `coolify` network. It has **no Traefik
 labels**, so nothing routes it from the public domain — the templates are
 internal-only *by construction*. No header checks, no Host allow-list, no Next
 route handler: an unexposed container simply cannot be reached from outside.
 
-`Caddyfile` serves only `*.html`; anything else 404s, so this README and the
-Caddyfile itself are never returned even though the whole dir is the web root.
+The templates are **baked into the image** at build time (`Dockerfile` COPYs the
+`*.html` files into `/srv` and the `Caddyfile` into place) — they are *not*
+bind-mounted. Coolify rewrites relative compose bind-mount sources to
+`/data/coolify/applications/<uuid>/`, where the git checkout isn't present, so a
+mounted `Caddyfile` resolves to a missing path Docker turns into a directory and
+the mount fails. Only `*.html` is COPYed into the web root, so this README and
+the `Caddyfile` are never servable.
 
 ## Where GoTrue fetches these from
 
@@ -44,10 +49,10 @@ aliases the same name), use the Coolify-generated container name in the URLs
 instead. There is no Host allow-list to update — Caddy serves whatever host asks.
 
 ## Editing / adding templates
-- Editing a template is a **redeploy of the `email-templates` service** (the dir
-  is bind-mounted read-only) — no image rebuild. GoTrue then caches the new body
-  for `GOTRUE_MAILER_TEMPLATE_MAX_AGE` (default 10m); wait it out or restart the
-  auth container to see the change sooner.
+- Editing a template is a **rebuild + redeploy of the `email-templates` service**
+  (the `*.html` is COPYed into the image). GoTrue then caches the new body for
+  `GOTRUE_MAILER_TEMPLATE_MAX_AGE` (default 10m); wait it out or restart the auth
+  container to see the change sooner.
 - Adding a template is just a new `*.html` file here plus its
   `MAILER_TEMPLATES_*` env on GoTrue — no allow-list to edit.
 

@@ -244,9 +244,14 @@ Gotchas:
   in the URLs. There is no Host allow-list to update — Caddy serves any host.
 - GoTrue caches templates for `GOTRUE_MAILER_TEMPLATE_MAX_AGE` (default 10m).
   After editing a template, wait it out or restart the auth container.
-- The templates are bind-mounted read-only into the container, so editing one is
-  a **redeploy of `email-templates`** (re-mount) — no image rebuild. Adding a
-  template is a new `*.html` file plus its `MAILER_TEMPLATES_*` env on GoTrue.
+- The templates are **baked into the image** (`infra/email-templates/Dockerfile`
+  COPYs them in), *not* bind-mounted — Coolify rewrites relative compose
+  bind-mount sources to `/data/coolify/applications/<uuid>/`, where the checkout
+  isn't present, so a mounted `Caddyfile` resolves to a missing path Docker turns
+  into a directory and the container fails to start (`not a directory ...
+  /etc/caddy/Caddyfile`). Editing a template is therefore a **rebuild + redeploy**
+  of `email-templates`. Adding a template is a new `*.html` file plus its
+  `MAILER_TEMPLATES_*` env on GoTrue.
 
 ---
 

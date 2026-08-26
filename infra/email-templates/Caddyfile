@@ -9,15 +9,14 @@
 :80 {
 	root * /srv
 
-	# Only the four *.html templates are servable. /srv is the whole
-	# infra/email-templates dir (see the compose bind mount), so this keeps the
-	# Caddyfile and README out of the response. Anything else -> 404, matching
-	# GoTrue's "a failed fetch falls back to the built-in body" behaviour.
+	# Only the four *.html templates are servable. The Dockerfile COPYs just the
+	# *.html files into /srv, and this rule is belt-and-braces on top. Anything
+	# else -> 404, matching GoTrue's "a failed fetch falls back to the built-in
+	# body" behaviour.
 	@template path *.html
 	handle @template {
 		# GoTrue caches templates itself (GOTRUE_MAILER_TEMPLATE_MAX_AGE); this
-		# just stops any intermediary from holding a stale copy. An edit to a
-		# mounted file is served live — no image rebuild.
+		# just stops any intermediary from holding a stale copy.
 		header Cache-Control "no-store"
 		file_server
 	}

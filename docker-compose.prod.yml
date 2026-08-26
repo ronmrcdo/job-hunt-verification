@@ -60,14 +60,15 @@ services:
   # domain, which is exactly what makes the templates internal-only. See
   # infra/email-templates/README.md and PRODUCTION.md §3e.
   email-templates:
-    image: caddy:2-alpine
+    # Built, not bind-mounted: Coolify rewrites relative compose bind-mount
+    # sources to /data/coolify/applications/<uuid>/ (no git checkout there), so a
+    # mounted Caddyfile resolves to a missing path Docker turns into a directory
+    # and the mount fails. The templates are COPYed into the image instead — see
+    # infra/email-templates/Dockerfile. Editing a template is now a rebuild.
+    build:
+      context: ./infra/email-templates
+    image: ${IMAGE_PREFIX:-jobverifai}/email-templates:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    volumes:
-      - ./infra/email-templates/Caddyfile:/etc/caddy/Caddyfile:ro
-      # The whole dir is the web root; the Caddyfile only serves *.html, so the
-      # Caddyfile and README are mounted but never served. Editing a template is
-      # a redeploy of this service (re-mount) — no image rebuild.
-      - ./infra/email-templates:/srv:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/confirmation.html"]
       interval: 30s
