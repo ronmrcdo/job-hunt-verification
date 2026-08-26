@@ -63,11 +63,21 @@ def append_new_cases(
     out = list(dataset)
     added: list[str] = []
     # Seq is per-investigation so re-promoting one investigation twice yields
-    # _0, _1 rather than colliding.
+    # _0, _1 rather than colliding. Seeded from ids already in `dataset` (not
+    # just this batch) so a later, separate promotion of the same
+    # investigation continues the sequence instead of recomputing seq=0 and
+    # silently colliding with (skipping) an already-exported case.
     per_inv: dict[str, int] = {}
     for cand in candidates:
         inv = str(cand["investigation_id"])
-        seq = per_inv.get(inv, 0)
+        if inv not in per_inv:
+            prefix = f"feedback_{inv[:8]}_"
+            max_seq = -1
+            for cid in existing:
+                if cid.startswith(prefix) and cid[len(prefix):].isdigit():
+                    max_seq = max(max_seq, int(cid[len(prefix):]))
+            per_inv[inv] = max_seq + 1
+        seq = per_inv[inv]
         case = candidate_to_case(cand, seq)
         per_inv[inv] = seq + 1
         if case["id"] in existing:
@@ -102,7 +112,7 @@ def main() -> None:  # pragma: no cover - DB-bound operator entrypoint
             "update eval_candidate set status = 'exported', exported_at = now() "
             "where status = 'promoted'"
         )
-        conn.commit()
+        # No explicit commit: psycopg3 commits automatically on clean `with` exit.
     print(f"Appended {len(added)} case(s): {', '.join(added)}")
     print("Review `git diff apps/api/eval/dataset.json` and open a PR — nothing was committed.")
 
