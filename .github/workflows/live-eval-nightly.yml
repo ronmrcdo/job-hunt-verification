@@ -1,0 +1,24 @@
+# Live eval on a schedule + manual dispatch. The ci.yml path filter can only see
+# code diffs, so a model-env-ONLY swap (changing CHEAP_MODEL/STRONG_MODEL in the
+# deploy env, no file touched) would never trigger the PR gate. This catches
+# that regression window and lets an operator re-run the gate on demand.
+name: live-eval-nightly
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC nightly
+  workflow_dispatch:
+
+jobs:
+  live-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: cd apps/api && uv sync
+      - name: Live eval (retry once on transient network)
+        run: cd apps/api && (uv run pytest eval/test_eval.py --live -q || uv run pytest eval/test_eval.py --live -q)
+        env:
+          CHEAP_MODEL: ${{ secrets.CHEAP_MODEL }}
+          STRONG_MODEL: ${{ secrets.STRONG_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}

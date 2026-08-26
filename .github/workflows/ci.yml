@@ -9,6 +9,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       web: ${{ steps.filter.outputs.web }}
       types: ${{ steps.filter.outputs.types }}
+      band: ${{ steps.filter.outputs.band }}
     steps:
       - uses: actions/checkout@v4
       - id: filter
@@ -22,6 +23,14 @@ jobs:
             types:
               - 'apps/api/**'
               - 'packages/api-types/**'
+            band:
+              - 'apps/api/src/app/rubric.py'
+              - 'apps/api/src/app/graph/nodes/analysis.py'
+              - 'apps/api/src/app/graph/nodes/report.py'
+              - 'apps/api/src/app/graph/nodes/research.py'
+              - 'apps/api/src/app/graph/nodes/intake.py'
+              - 'apps/api/src/app/config.py'
+              - 'apps/api/eval/dataset.json'
 
   api:
     needs: changes
@@ -61,6 +70,27 @@ jobs:
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install
       - run: cd apps/web && pnpm vitest run
+
+  # Required on band-logic PRs only: a rubric/prompt/model-default/dataset edit
+  # must not silently regress the false-positive rate. The FP gate lives in
+  # eval/test_eval.py::test_false_positive_rate_zero (zero legit case may band
+  # HIGH/CRITICAL) plus per-case ceiling checks. Unrelated PRs never pay for it.
+  # Model-env-ONLY swaps (not a code diff) are caught by live-eval-nightly.yml.
+  live-eval:
+    needs: changes
+    if: needs.changes.outputs.band == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: cd apps/api && uv sync
+      - name: Live eval (retry once on transient network)
+        run: cd apps/api && (uv run pytest eval/test_eval.py --live -q || uv run pytest eval/test_eval.py --live -q)
+        env:
+          CHEAP_MODEL: ${{ secrets.CHEAP_MODEL }}
+          STRONG_MODEL: ${{ secrets.STRONG_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
 
   types:
     needs: changes
