@@ -172,13 +172,13 @@ def test_promoted_feedback_cases_load_and_validate():
 
     case = candidate_to_case(
         {
+            "id": "33333333-3333-3333-3333-333333333333",
             "investigation_id": "deadbeefcafef00d",
             "submission_snapshot": {"job_text": "Remote role, apply via email."},
             "expected_max_band": "MODERATE",
             "expected_band": None,
             "tags": ["legit"],
-        },
-        seq=0,
+        }
     )
     assert case["expected_band"] in ("LOW", "MODERATE", "HIGH", "CRITICAL")
     assert "job_text" in case["submission"]
