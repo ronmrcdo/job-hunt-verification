@@ -15,25 +15,30 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import type { ReportVM } from "../../lib/report-view-model";
+import type { Finding } from "../../lib/investigations";
 import { useFlow } from "../../lib/flow-context";
 import { useMotion } from "../../lib/motion";
 import { createClient } from "../../lib/supabase/client";
 import { CountsStrip } from "./CountsStrip";
 import { Button } from "../ui/Button";
 import { MicroLabel } from "../ui/MicroLabel";
+import { VerdictWidget } from "./VerdictWidget";
 
 export interface ReportRailProps {
   vm: ReportVM;
   // The report's own id — kept so the rail can address this investigation
   // when the issue report is wired to a real endpoint.
   investigationId: string;
+  // Raw findings (not the VM's groups) — the verdict picker needs the real
+  // finding id, which the VM's `recordId` (e.g. "F-01") does not carry.
+  findings: Finding[];
   // Lifted to the page so the acknowledgement survives a re-render and so
   // this stays the single report-an-issue control in the report.
   reported: boolean;
   onReport: () => void;
 }
 
-export function ReportRail({ vm, investigationId, reported, onReport }: ReportRailProps) {
+export function ReportRail({ vm, investigationId, findings, reported, onReport }: ReportRailProps) {
   const router = useRouter();
   const { reset } = useFlow();
   // authEmail no longer lives in flow state (task-7 trim of
@@ -60,14 +65,6 @@ export function ReportRail({ vm, investigationId, reported, onReport }: ReportRa
   }, []);
 
   const { fade } = useMotion();
-
-  // Seeded from the prop, then flips locally on click so the acknowledgement
-  // lands immediately even if the parent doesn't re-render with a new prop.
-  const [hasReported, setHasReported] = useState(reported);
-  const handleReport = () => {
-    setHasReported(true);
-    onReport();
-  };
 
   const handleCheckAnother = () => {
     reset();
@@ -98,24 +95,12 @@ export function ReportRail({ vm, investigationId, reported, onReport }: ReportRa
           <Button variant="primary" size="wide" onClick={handleCheckAnother}>
             Check another posting
           </Button>
-          {hasReported ? (
-            <p
-              role="status"
-              aria-live="polite"
-              className="py-2 text-center text-[12px] text-muted"
-            >
-              Thanks — we&apos;ll look at it
-            </p>
-          ) : (
-            <Button
-              variant="secondary"
-              size="wide"
-              className="!text-[11px] leading-[1.4]"
-              onClick={handleReport}
-            >
-              Report an issue with this assessment
-            </Button>
-          )}
+          <VerdictWidget
+            investigationId={investigationId}
+            findings={findings}
+            reported={reported}
+            onReported={onReport}
+          />
         </div>
       </div>
 
