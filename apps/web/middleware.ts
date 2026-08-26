@@ -5,11 +5,9 @@ export async function middleware(request: NextRequest) {
   return updateSession(request);
 }
 
-// Run on everything except static assets, images, and the auth email templates
-// under /emails. GoTrue fetches those over HTTP with no session; middleware must
-// not intercept and redirect them to a login page. They are not left open by
-// this exclusion — app/emails/[template]/route.ts serves them only to callers on
-// the internal Docker network.
+// Run on everything except static assets and images. (The GoTrue auth email
+// templates used to be excluded here too; they are served by their own Caddy
+// container now — see infra/email-templates — so this app no longer touches them.)
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|emails/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

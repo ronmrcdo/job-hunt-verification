@@ -54,6 +54,29 @@ services:
     networks: [coolify]
     logging: *logging
 
+  # Static file server for the GoTrue auth email templates. GoTrue fetches
+  # http://email-templates/<name>.html at send time over the shared coolify
+  # network. Deliberately NO Traefik labels: nothing routes this from the public
+  # domain, which is exactly what makes the templates internal-only. See
+  # infra/email-templates/README.md and PRODUCTION.md §3e.
+  email-templates:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    volumes:
+      - ./infra/email-templates/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The whole dir is the web root; the Caddyfile only serves *.html, so the
+      # Caddyfile and README are mounted but never served. Editing a template is
+      # a redeploy of this service (re-mount) — no image rebuild.
+      - ./infra/email-templates:/srv:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/confirmation.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks: [coolify]
+    logging: *logging
+
   web:
     build:
       context: ./apps/web

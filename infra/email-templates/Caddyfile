@@ -1,0 +1,32 @@
+# Serves the GoTrue auth email templates to the internal `coolify` network only.
+#
+# This service has NO Traefik labels in docker-compose.prod.yml, so nothing
+# routes it from the public domain — it is internal-only *by construction*, with
+# no header checks or Host allow-list to get wrong. GoTrue fetches
+# http://email-templates/<name>.html at send time and renders the
+# `{{ .Variable }}` placeholders itself; Caddy returns the raw bytes verbatim.
+
+:80 {
+	root * /srv
+
+	# Only the four *.html templates are servable. /srv is the whole
+	# infra/email-templates dir (see the compose bind mount), so this keeps the
+	# Caddyfile and README out of the response. Anything else -> 404, matching
+	# GoTrue's "a failed fetch falls back to the built-in body" behaviour.
+	@template path *.html
+	handle @template {
+		# GoTrue caches templates itself (GOTRUE_MAILER_TEMPLATE_MAX_AGE); this
+		# just stops any intermediary from holding a stale copy. An edit to a
+		# mounted file is served live — no image rebuild.
+		header Cache-Control "no-store"
+		file_server
+	}
+	handle {
+		respond "Not Found" 404
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
