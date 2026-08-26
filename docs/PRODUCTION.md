@@ -253,6 +253,72 @@ Gotchas:
   of `email-templates`. Adding a template is a new `*.html` file plus its
   `MAILER_TEMPLATES_*` env on GoTrue.
 
+### 3f. Admin API key for `/admin/*` (least-privilege, not service_role)
+
+The `/admin/*` feedback-triage surface (feedback→eval-loop spec) reads across
+users, so it needs a principal that **bypasses RLS**. It does **not** use the
+god-mode `service_role` key. Instead a dedicated Postgres role, `admin_ro`,
+carries exactly the privileges the triage queue needs and nothing else — so a
+leak of its key cannot wipe or exfiltrate the database the way a leaked
+`service_role` key could.
+
+| Piece | Where |
+|---|---|
+| Role definition | `supabase/migrations/20260826130000_admin_ro_role.sql` — `bypassrls`, `SELECT` on `investigations`/`feedback`, `INSERT` on `eval_candidate`; **no** delete/update, no other tables. |
+| Key minter | `apps/web/scripts/mint-admin-key.mjs` — signs an `admin_ro` JWT with the stack `JWT_SECRET` (zero deps). |
+| Client | `apps/web/lib/supabase/admin.ts` — `import "server-only"`; sole reader of `SUPABASE_ADMIN_KEY`. |
+| Env (web) | `SUPABASE_ADMIN_KEY` (server-only, **not** `NEXT_PUBLIC_*`); optional `SUPABASE_ADMIN_URL`. |
+
+A Supabase "key" is just a JWT signed with `JWT_SECRET` carrying a `role` claim
+(the anon/service keys are exactly this), so the admin key is minted, not issued
+by a dashboard. Provision it once:
+
+**Step 1 — apply the role migration.** Idempotent, and safe to apply before the
+`feedback`/`eval_candidate` tables exist (those grants are existence-guarded and
+activate once the tables land):
+
+```bash
+docker compose -f docker-compose.prod.yml exec api-worker \
+  supabase db push --workdir /app --db-url "$DATABASE_URL"
+```
+
+**Step 2 — mint the key** locally/offline with the stack's `JWT_SECRET` (the same
+secret that signs your anon/service keys, from the Supabase Coolify stack env):
+
+```bash
+JWT_SECRET='<supabase stack JWT_SECRET>' node apps/web/scripts/mint-admin-key.mjs
+```
+
+**Step 3 — set it on the web service** in Coolify as `SUPABASE_ADMIN_KEY`
+(**not** `NEXT_PUBLIC_*`, so it never reaches the browser bundle), then redeploy
+the web service. It is a plain runtime var — no rebuild needed.
+
+**Step 4 — verify read-yes / delete-no.** Before `feedback` exists, test against
+`investigations`. SELECT must succeed; DELETE must be refused (proves the blast
+radius is capped):
+
+```bash
+KEY='<the minted token>'; BASE='https://<NEXT_PUBLIC_SUPABASE_URL>'   # or SUPABASE_ADMIN_URL
+curl -s    "$BASE/rest/v1/investigations?select=id&limit=1"                         -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
+curl -s -X DELETE "$BASE/rest/v1/investigations?id=eq.00000000-0000-0000-0000-000000000000" -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
+```
+
+> **Kong gotcha (self-hosted).** Kong is configured with `key-auth` for only the
+> anon and service keys, so it may reject the custom `admin_ro` JWT with
+> `No API key found` / `Invalid authentication` **before** it reaches PostgREST.
+> If the SELECT above fails that way, set `SUPABASE_ADMIN_URL` to the **internal
+> PostgREST service URL** (bypassing Kong) — the admin client is server-side, so
+> an internal URL is fine, and it keeps the endpoint off the public internet. The
+> alternative (registering the new key as a Kong consumer in `kong.yml`) is
+> fiddlier under Coolify's baked-image config.
+
+**Rotation / kill switch.** The key is signed by `JWT_SECRET`. There is no
+per-key revoke on self-hosted — rotating `JWT_SECRET` invalidates it (and every
+other token; all users are logged out), so treat that as the nuclear option.
+For a routine swap, re-mint with a new `exp` and replace `SUPABASE_ADMIN_KEY`.
+Leaving `SUPABASE_ADMIN_KEY` unset is safe until the `/admin/*` routes ship —
+nothing imports `admin.ts` yet.
+
 ---
 
 ## 4. Deploying
