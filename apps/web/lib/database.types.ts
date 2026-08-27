@@ -5,6 +5,7 @@
 //   supabase/migrations/20260822000000_investigations_entities.sql
 //   supabase/migrations/20260826010000_feedback.sql
 //   supabase/migrations/20260826010100_eval_candidate.sql
+//   supabase/migrations/20260827000000_admin_dashboard.sql
 // OPERATOR: regenerate against the local stack and overwrite this file:
 //   supabase gen types typescript --local > apps/web/lib/database.types.ts
 // The jsonb payload shapes mirror apps/api/src/app/graph/state.py.
@@ -93,7 +94,14 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      // SECURITY DEFINER counter (20260827000000_admin_dashboard.sql): returns
+      // only the scalar auth.users count so admin_ro never reads those rows.
+      admin_registered_user_count: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
