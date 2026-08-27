@@ -31,7 +31,7 @@ function StepListSkeleton() {
         {SKELETON_TITLE_WIDTHS.map((width, i) => (
           <div
             key={i}
-            className="grid grid-cols-[88px_22px_1fr_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px] max-[430px]:grid-cols-[52px_18px_1fr] max-[430px]:gap-2"
+            className="grid grid-cols-[88px_22px_minmax(0,1fr)_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px] max-[430px]:grid-cols-[52px_18px_minmax(0,1fr)] max-[430px]:gap-2"
           >
             <div className="mt-[3px] h-[11px] w-10 bg-surface-soft motion-safe:animate-pulse max-[430px]:w-8" />
             <div className="mt-[5px] h-[11px] w-[11px] bg-surface-soft motion-safe:animate-pulse" />

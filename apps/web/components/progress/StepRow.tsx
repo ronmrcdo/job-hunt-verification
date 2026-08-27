@@ -231,7 +231,7 @@ export function StepRow({ step, state, index = 0, finishedAt }: StepRowProps) {
       // collapse to three (timestamp · glyph · title) and drop the right-hand
       // status label — the glyph already carries state — via max-[430px]:hidden
       // on that cell below.
-      className="grid grid-cols-[88px_22px_1fr_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px] max-[430px]:grid-cols-[52px_18px_1fr] max-[430px]:gap-2"
+      className="grid grid-cols-[88px_22px_minmax(0,1fr)_108px] items-start gap-[14px] border-t border-rule px-2 py-[15px] max-[430px]:grid-cols-[52px_18px_minmax(0,1fr)] max-[430px]:gap-2"
       style={{
         // Handoff: running rows tint #FAFAFA; transition background 400ms ease.
         background: s.runningRow ? "var(--color-neutral-row)" : "var(--color-page)",

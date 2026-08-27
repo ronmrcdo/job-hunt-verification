@@ -67,7 +67,12 @@ export function FindingCard({ finding }: FindingCardProps) {
       data-row-tone={row.tone}
       className={["rounded-none hover:bg-surface-soft", row.backgroundClass].filter(Boolean).join(" ")}
     >
-      <div className="grid grid-cols-[54px_6px_1fr_26px] items-start gap-3 py-3 max-[430px]:grid-cols-[6px_1fr_44px]">
+      {/* minmax(0,…) on the flexible track, not a bare 1fr: an explicit `1fr`
+          keeps its default min-width:auto, so a long claim word or URL would
+          size the track to its own min-content and push the whole row past the
+          viewport (horizontal scroll on mobile). minmax(0,…) lets it shrink;
+          min-w-0 + break-words on the cell then wrap the content instead. */}
+      <div className="grid grid-cols-[54px_6px_minmax(0,1fr)_26px] items-start gap-3 py-3 max-[430px]:grid-cols-[6px_minmax(0,1fr)_44px]">
         <div data-mobile-hide-recordid className="pt-1 font-mono text-[12px] max-[430px]:hidden">
           {finding.recordId}
         </div>
@@ -76,9 +81,10 @@ export function FindingCard({ finding }: FindingCardProps) {
           className="h-5 w-[6px] rounded-none"
           style={{ background: marker.color }}
         />
-        <div>
+        <div className="min-w-0">
           <div
             data-weight={claimWeight}
+            className="break-words"
             style={{
               fontWeight: claimWeight,
               fontSize: 18,
@@ -87,10 +93,12 @@ export function FindingCard({ finding }: FindingCardProps) {
           >
             {finding.claim}
           </div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.1em] text-muted">{finding.metaLine}</div>
+          <div className="mt-1 break-words text-[11px] uppercase tracking-[0.1em] text-muted">
+            {finding.metaLine}
+          </div>
           {finding.provenanceLabel && (
             // Product rule #5: always visible, never gated behind expand.
-            <div className="mt-2 rounded-none border border-rule bg-page p-2 text-[12px] leading-[1.5]">
+            <div className="mt-2 break-words rounded-none border border-rule bg-page p-2 text-[12px] leading-[1.5]">
               {finding.provenanceLabel}
             </div>
           )}
