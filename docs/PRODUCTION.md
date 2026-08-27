@@ -255,6 +255,10 @@ Gotchas:
 
 ### 3f. Admin API key for `/admin/*` (least-privilege, not service_role)
 
+> This section is only the **database** principal. Reaching `/admin/*` at all
+> also requires the **Cloudflare Access** edge-auth vars in **§3g** — setting
+> just the key below still 404s every admin request.
+
 The `/admin/*` feedback-triage surface (feedback→eval-loop spec) reads across
 users, so it needs a principal that **bypasses RLS**. It does **not** use the
 god-mode `service_role` key. Instead a dedicated Postgres role, `admin_ro`,
@@ -318,6 +322,62 @@ other token; all users are logged out), so treat that as the nuclear option.
 For a routine swap, re-mint with a new `exp` and replace `SUPABASE_ADMIN_KEY`.
 Leaving `SUPABASE_ADMIN_KEY` unset is safe until the `/admin/*` routes ship —
 nothing imports `admin.ts` yet.
+
+### 3g. Admin route auth for `/admin/*` (Cloudflare Access — edge identity)
+
+`/admin/*` has **two independent** auth layers. §3f (`SUPABASE_ADMIN_KEY`) is the
+*database* principal — **what** the route may read/write. This section is the
+*edge identity* — **who** is allowed to reach the route at all. Both are
+required; setting only the admin key (a common trap, since §3f used to be the
+only admin subsection) still yields a **404 on every `/admin/*` request**.
+
+Admin identity lives **only** in Cloudflare Access — the app has no `is_admin`
+column and no roles table. Cloudflare puts a signed `Cf-Access-Jwt-Assertion`
+header on every request that clears the Access policy; the app verifies it
+against the team's JWKS + audience before serving anything.
+
+| Piece | Where |
+|---|---|
+| Edge gate (cheap) | `apps/web/middleware.ts` — `/admin/*` with **no** assertion header → bare `404` (blank body). |
+| Full verify | `apps/web/lib/admin/access.ts` — `jwtVerify` against the team JWKS, checking `issuer` + `audience`; any failure → `AdminAccessError`. |
+| Failure mode | Every `/admin/*` surface maps `AdminAccessError` → `notFound()` (**404, never 403**) so the route's existence never leaks — even to a request that reaches the origin around Cloudflare. |
+| Env (web) | `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` — both server-only runtime vars, **not** `NEXT_PUBLIC_*`. |
+
+**Step 1 — create a self-hosted Access application** in **Cloudflare Zero Trust**
+(<https://one.dash.cloudflare.com> → **Access → Applications → Add an
+application → Self-hosted**) covering `jobverifai.ronmrcdo.dev` with a path of
+`/admin` (so it guards `/admin` and everything under it). Add an Access **policy**
+allowing your admin email(s). This is the login you already see in front of the
+route.
+
+**Step 2 — read the two values off that application:**
+
+- **`CF_ACCESS_AUD`** — the application's **Application Audience (AUD) Tag**, a
+  64-char hex string on the app's **Overview** tab (copy button next to it). It
+  is **per-application** — use the AUD of the app whose policy the `/admin/*`
+  request actually passes through, not another app's.
+- **`CF_ACCESS_TEAM_DOMAIN`** — your team domain, `something.cloudflareaccess.com`
+  (Zero Trust **Settings → Custom Pages**, or the host of the login page you
+  were redirected to). Set it **without** the `https://` scheme — the code adds
+  it (`https://${team}/cdn-cgi/access/certs`).
+
+**Step 3 — set both on the web service** in Coolify (plain runtime vars, **not**
+`NEXT_PUBLIC_*`), then redeploy/restart the web service. No rebuild needed — they
+are read at request time, not baked into the bundle.
+
+> **Diagnosing the 404.** The two layers fail differently, which tells you where
+> to look:
+> - **Blank/empty 404** (no styled page) → the request reached the origin with
+>   **no** `Cf-Access-Jwt-Assertion` header. Cloudflare Access isn't in front of
+>   the path, or a direct-to-origin request bypassed it.
+> - **Styled "nothing lives at this address" 404** → the header *was* present
+>   (you passed the edge gate) but full verification failed: `CF_ACCESS_TEAM_DOMAIN`
+>   / `CF_ACCESS_AUD` unset, an AUD that belongs to a different Access app, or a
+>   team domain that doesn't match the token's issuer.
+
+**Rotation.** Neither value is a secret in the credential sense — the AUD is a
+public application identifier and the team domain is public. Rotate them only if
+you delete/recreate the Access application (new AUD) or rename the team.
 
 ---
 
