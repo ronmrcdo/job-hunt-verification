@@ -50,7 +50,7 @@ function Checklist({
           <br />
           THE POSTING
         </h1>
-        <p className="max-w-[600px] text-[16px] leading-[1.6] text-secondary">
+        <p className="max-w-[600px] break-words text-[16px] leading-[1.6] text-secondary">
           {investigation.submission.company_name ||
             investigation.entities?.company_name ||
             investigation.title ||
@@ -128,8 +128,8 @@ function Report({ investigation }: { investigation: Investigation }) {
           <BandBanner vm={completeVm} confidenceSlot={<ConfidencePanel vm={completeVm} />} />
         </RevealItem>
       </Reveal>
-      <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 max-[430px]:px-5 md:grid-cols-[1fr_320px]">
-        <Reveal className="flex flex-col gap-10">
+      <div className="mx-auto max-w-page grid grid-cols-1 gap-8 px-6 py-16 max-[430px]:px-5 md:grid-cols-[minmax(0,1fr)_320px]">
+        <Reveal className="flex min-w-0 flex-col gap-10">
           <RevealItem>
             <Summary summary={completeVm.summary} />
           </RevealItem>
