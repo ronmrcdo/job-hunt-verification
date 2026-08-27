@@ -15,9 +15,24 @@ import type { Database } from "../database.types";
 // is not NEXT_PUBLIC_*, so it stays server-side. This module is the sole reader
 // of it.
 //
-// SUPABASE_ADMIN_URL is an optional override: point it at PostgREST directly
-// (bypassing the self-hosted Kong gateway) if Kong rejects the custom JWT with
-// "No API key found"/"Invalid authentication". Falls back to the public URL.
+// Kong's key-auth only recognizes the anon/service keys, so it rejects the
+// custom admin_ro JWT with "No API key found"/"Invalid authentication" before
+// the request reaches PostgREST. We clear that by sending the (already public)
+// anon key as the `apikey` header — Kong's gatekeeper — while the admin_ro JWT
+// still rides in `Authorization: Bearer` (supabase-js's default from the key
+// arg below), so PostgREST SET ROLEs into admin_ro. No privilege is added: the
+// anon key is public; the privilege lives entirely in the secret Bearer JWT.
+//
+// This keeps Kong, which is the ONLY layer that routes the `/rest/v1` prefix
+// supabase-js unconditionally appends (SupabaseClient builds `new URL('rest/v1',
+// baseUrl)`). Do NOT point SUPABASE_ADMIN_URL at bare PostgREST to "bypass Kong":
+// PostgREST serves tables at root, so `/rest/v1/investigations` is a 3-segment
+// path it rejects with "Invalid path specified in request URL" — every admin
+// read then fails (Overview cards read 0; the feedback queue shows that error).
+//
+// SUPABASE_ADMIN_URL remains an optional override for a gateway on a different
+// host, but it must still front PostgREST with the `/rest/v1` prefix. Falls back
+// to the public URL.
 //
 // Constructed LAZILY, on first use. SUPABASE_ADMIN_KEY is a runtime-only secret
 // and is deliberately NOT a build arg (apps/web/Dockerfile), so it's absent
@@ -31,7 +46,12 @@ function getClient(): SupabaseClient<Database> {
     client = createClient<Database>(
       process.env.SUPABASE_ADMIN_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_ADMIN_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+        // apikey satisfies Kong's key-auth; the admin_ro JWT stays the Bearer
+        // token (default from the key arg above) so PostgREST picks up the role.
+        global: { headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! } },
+      },
     );
   }
   return client;
