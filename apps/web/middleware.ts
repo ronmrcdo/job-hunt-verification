@@ -9,7 +9,13 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     if (!request.headers.get("cf-access-jwt-assertion")) {
-      return new NextResponse(null, { status: 404 });
+      // Render the app's branded 404 (app/not-found.tsx) rather than a bare
+      // body-less response the browser dresses with its own error chrome.
+      // Rewriting to Next's internal /_not-found route surfaces that page with
+      // its prerendered 404 status — same non-existence guarantee (indistinguishable
+      // from any missing route, 404 never 403), just the styled page. Still
+      // short-circuits before the route and updateSession, so no admin work runs.
+      return NextResponse.rewrite(new URL("/_not-found", request.url));
     }
   }
   return updateSession(request);
