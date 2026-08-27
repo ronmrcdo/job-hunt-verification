@@ -381,6 +381,128 @@ you delete/recreate the Access application (new AUD) or rename the team.
 
 ---
 
+### 3h. Browser CORS on the Supabase API (Kong)
+
+The web bundle talks to Supabase **directly from the browser** (§1) — `/auth/v1`,
+`/rest/v1`, `/realtime/v1` — so those responses need CORS headers. On the
+self-hosted stack that is **Kong's** job: not Traefik's, not GoTrue's, and not
+something you can set in Studio.
+
+Coolify's one-click Supabase template already attaches a bare `- name: cors`
+plugin to every public route, which defaults to `Access-Control-Allow-Origin: *`.
+Tightening it to the real origins means giving that plugin a `config:` block.
+
+**Where the file lives.** Supabase service → **Storages** → the file mount
+`./volumes/api/kong.yml` (target `/home/kong/temp.yml`); on the host,
+`/data/coolify/services/<service-uuid>/volumes/api/kong.yml`. At container start
+`kong-entrypoint.sh` substitutes `$VARS` into it and writes the result to
+`/usr/local/kong/kong.yml` (`KONG_DECLARATIVE_CONFIG`) — so the rendered file the
+error messages refer to is **not** the file you edit, and is a line or two shorter
+(the entrypoint deletes empty `- key:` lines when the publishable/secret keys are
+unset).
+
+**Which services need it.** The `plugins:` block hangs off the **service**, not the
+route — edit `rest-v1`, not `rest-v1-all`.
+
+| Service | Configure? | Why |
+|---|---|---|
+| `auth-v1` | ✔ | supabase-js `fetch`es `/token`, `/user`, `/logout` |
+| `rest-v1` | ✔ | PostgREST — every data read/write from the browser |
+| `realtime-v1-ws`, `realtime-v1-rest` | ✔ | Realtime subscriptions |
+| `graphql-v1`, `storage-v1`, `functions-v1` | only if used | unused today |
+| `auth-v1-open*` (`/verify`, `/callback`, `/authorize`) | ✘ leave bare | top-level **navigations**, never preflighted |
+| `auth-v1-open-jwks` | ✘ leave bare | public document, no credentials — `*` is correct |
+| `dashboard`, `meta`, `mcp-blocker` | ✘ leave bare | Studio assets / not browser-facing from this app |
+
+**The block.** Replace *only* the `- name: cors` list item; every other plugin on
+that service (`key-auth`, `request-transformer`, `acl`) must stay exactly as it was
+or authentication breaks.
+
+```yaml
+      plugins:
+        - name: cors
+          config:
+            origins:
+              - https://jobverifai.ronmrcdo.dev
+              - http://localhost:3000
+            methods: [GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS]
+            headers: [Accept, Accept-Profile, Content-Profile, Authorization, Content-Type, apikey, x-client-info, x-supabase-api-version, Prefer, Range]
+            exposed_headers: [Content-Range, Content-Profile]
+            credentials: true
+            max_age: 3600
+            preflight_continue: false
+        - name: key-auth          # ← unchanged, and everything below it
+          config:
+            hide_credentials: false
+```
+
+To keep one authoritative origin list, anchor the first occurrence and alias the
+rest — no extra top-level key, so Kong's declarative parser stays happy:
+
+```yaml
+        - &cors_plugin
+          name: cors
+          config:
+            origins:
+              - https://jobverifai.ronmrcdo.dev
+        # …later services:
+        - *cors_plugin
+```
+
+> **Four ways this bites.**
+> - **`config:` must align exactly with `name:`** (both keys of the same mapping,
+>   two columns past the `- `). Indent it deeper and YAML reads it as a
+>   continuation of the scalar `cors`, then dies on the colon:
+>   `mapping values are not allowed in this context`. A literal tab anywhere in the
+>   indentation does the same — check with `cat -A`, the Coolify editor hides it.
+> - **No `$` in any value.** The entrypoint's `awk` pass substitutes every `$NAME`
+>   token from the environment and will eat it.
+> - **`credentials: true` is incompatible with `origins: ["*"]`** — browsers reject
+>   a wildcard on credentialed requests. List explicit origins, or drop
+>   `credentials` (supabase-js authenticates with headers, not cookies).
+> - **Origins are exact `scheme://host[:port]`** — no trailing slash, no path. A
+>   value containing regex metacharacters is treated as a PCRE, which is how you'd
+>   write `~^https://.*\.ronmrcdo\.dev$`.
+
+**Validate before deploying.** A malformed `kong.yml` makes Kong *exit at boot*
+rather than serve stale config — and because everything reaches the database
+through Kong, that takes down auth, REST and Realtime together (the visible
+symptom is usually Studio failing to refresh its token). Parse it first, against
+the file you actually edit; match the image tag to the one in the service compose:
+
+```bash
+docker run --rm \
+  -v /data/coolify/services/<service-uuid>/volumes/api/kong.yml:/tmp/kong.yml:ro \
+  kong/kong:3.9.1 kong config parse /tmp/kong.yml
+```
+
+The unsubstituted `$VARS` don't bother the YAML parser. Loop on this until it is
+clean, *then* deploy.
+
+**Apply.** **Redeploy, not restart** — the UI edit is persisted to Coolify's
+database and it is the deploy that writes it to the host bind-mount path. Once the
+new content is confirmed on disk (`grep -A6 'name: cors' <host path>`), a plain
+`docker restart <kong-container>` is enough for subsequent iterations, since the
+entrypoint re-renders on every start. Then confirm it is live:
+
+```bash
+curl -i -X OPTIONS 'https://<supabase-host>/rest/v1/investigations' \
+  -H 'Origin: https://jobverifai.ronmrcdo.dev' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: authorization,apikey,content-type'
+```
+
+`access-control-allow-origin: https://jobverifai.ronmrcdo.dev` (rather than `*`)
+means the new config took.
+
+> **Not CORS:** the Google sign-in redirect chain. `/auth/v1/authorize` →
+> Google → `/auth/v1/callback` → `/auth/callback` are all top-level navigations,
+> and the code exchange in `apps/web/app/auth/callback/route.ts` runs server-side.
+> A broken OAuth redirect is `GOTRUE_URI_ALLOW_LIST` / `API_EXTERNAL_URL`, never
+> this file.
+
+---
+
 ## 4. Deploying
 
 From the host, with `.env.production` filled in:
@@ -508,6 +630,12 @@ Hard-won, carried here so they stop living in one person's head:
   domain and the router hash in labels; a `${...}` there is taken literally.
 - **Coolify injects UI-set environment into containers**, shadowing compose values.
   A surprising runtime value → check the Coolify UI env for that service first.
+- **A malformed `kong.yml` takes the whole Supabase API down.** Kong exits at boot
+  on a declarative-config parse error rather than serving stale config, so auth,
+  REST and Realtime fail together — the usual first symptom is Studio unable to
+  refresh its token. Validate with `kong config parse` before deploying (§3h);
+  `mapping values are not allowed in this context` is almost always `config:`
+  indented deeper than its sibling `name:`, or a literal tab.
 - **The Inngest signing key must be plain, even-length hex.** The server
   length-checks the raw value *before* stripping any `signkey-...` prefix, so a
   prefixed key is rejected. Generate with `openssl rand -hex 32`.
