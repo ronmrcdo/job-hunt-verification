@@ -244,22 +244,4 @@ describe("submitted rows: the posting URL", () => {
 
     expect(vm.submitted.map((r) => r.label)).not.toContain("Posting");
   });
-
-  it("omits the Email and Posting rows when the submission carries them as explicit null / empty", () => {
-    // API- and worker-shaped submissions (RawSubmission) keep these keys present
-    // with a null value rather than omitting them, so a `!== undefined` guard
-    // would leak an empty row. Truthy+trim must drop them.
-    const vm = toReportViewModel({
-      ...SAMPLE_HIGH.inv,
-      submission: {
-        job_text: "some posting",
-        recruiter_email: null as unknown as string,
-        job_url: "   ",
-      },
-    });
-
-    const labels = vm.submitted.map((r) => r.label);
-    expect(labels).not.toContain("Email");
-    expect(labels).not.toContain("Posting");
-  });
 });

@@ -293,20 +293,15 @@ export function toReportViewModel(inv: Investigation): ReportVM {
   const recruiter = pair([ent.recruiter_name, ent.contact_channel], " · ");
   if (recruiter) submittedRows.push({ label: "Recruiter", value: recruiter });
 
-  // Truthy + trim, exactly like the entity rows above — never `!== undefined`.
-  // A submission whose optional field is an explicit JSON null or "" (API- or
-  // worker-shaped rows, or legacy data) would otherwise render an empty row.
-  const email = inv.submission.recruiter_email;
-  if (email && email.trim())
-    submittedRows.push({ label: "Email", value: email, mono: true });
+  if (inv.submission.recruiter_email !== undefined)
+    submittedRows.push({ label: "Email", value: inv.submission.recruiter_email, mono: true });
   // The posting URL is captured by NewCheckForm and stored on the submission,
   // so echoing it back is the user's confirmation that we checked the link
   // they meant. Mono because it's a machine string, and — per rule #4 — a
   // plain value, never an <a href>: this app must not offer a one-click route
   // to a page it may be about to call a scam.
-  const jobUrl = inv.submission.job_url;
-  if (jobUrl && jobUrl.trim())
-    submittedRows.push({ label: "Posting", value: jobUrl, mono: true });
+  if (inv.submission.job_url !== undefined)
+    submittedRows.push({ label: "Posting", value: inv.submission.job_url, mono: true });
 
   return {
     caseId: toCaseId(inv.id),

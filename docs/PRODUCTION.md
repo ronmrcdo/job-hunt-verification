@@ -302,28 +302,19 @@ the web service. It is a plain runtime var — no rebuild needed.
 radius is capped):
 
 ```bash
-KEY='<the minted token>'; ANON='<NEXT_PUBLIC_SUPABASE_ANON_KEY>'; BASE='https://<NEXT_PUBLIC_SUPABASE_URL>'
-# apikey = anon (clears Kong's key-auth); Authorization = admin_ro JWT (PostgREST role).
-curl -s    "$BASE/rest/v1/investigations?select=id&limit=1"                         -H "apikey: $ANON" -H "Authorization: Bearer $KEY"
-curl -s -X DELETE "$BASE/rest/v1/investigations?id=eq.00000000-0000-0000-0000-000000000000" -H "apikey: $ANON" -H "Authorization: Bearer $KEY"
+KEY='<the minted token>'; BASE='https://<NEXT_PUBLIC_SUPABASE_URL>'   # or SUPABASE_ADMIN_URL
+curl -s    "$BASE/rest/v1/investigations?select=id&limit=1"                         -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
+curl -s -X DELETE "$BASE/rest/v1/investigations?id=eq.00000000-0000-0000-0000-000000000000" -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
 ```
 
 > **Kong gotcha (self-hosted).** Kong is configured with `key-auth` for only the
-> anon and service keys, so it rejects the custom `admin_ro` JWT with
+> anon and service keys, so it may reject the custom `admin_ro` JWT with
 > `No API key found` / `Invalid authentication` **before** it reaches PostgREST.
-> The app already handles this: `admin.ts` sends the (public) anon key as the
-> `apikey` header to clear Kong, while the `admin_ro` JWT stays the
-> `Authorization: Bearer` token so PostgREST adopts the role. **Leave
-> `SUPABASE_ADMIN_URL` unset** so the client uses the Kong gateway URL.
->
-> Do **NOT** set `SUPABASE_ADMIN_URL` to the bare internal PostgREST service URL
-> to "bypass Kong": supabase-js always appends the `/rest/v1` prefix that only
-> Kong routes, so bare PostgREST rejects every request with
-> `Invalid path specified in request URL` (Overview cards then read 0 and the
-> feedback queue shows that error). A `SUPABASE_ADMIN_URL` override is only valid
-> if it points at a gateway that still fronts PostgREST under `/rest/v1`. The
-> curl in Step 4 needs its own `apikey` header set to the **anon** key for the
-> same reason.
+> If the SELECT above fails that way, set `SUPABASE_ADMIN_URL` to the **internal
+> PostgREST service URL** (bypassing Kong) — the admin client is server-side, so
+> an internal URL is fine, and it keeps the endpoint off the public internet. The
+> alternative (registering the new key as a Kong consumer in `kong.yml`) is
+> fiddlier under Coolify's baked-image config.
 
 **Rotation / kill switch.** The key is signed by `JWT_SECRET`. There is no
 per-key revoke on self-hosted — rotating `JWT_SECRET` invalidates it (and every
