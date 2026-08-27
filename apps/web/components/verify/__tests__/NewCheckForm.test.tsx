@@ -149,6 +149,10 @@ describe("NewCheckForm", () => {
   it("disables submit only when weekly is exhausted AND balance is 0", async () => {
     quotaStatus.mockResolvedValueOnce({ weeklyUsed: 3, weeklyLimit: 3, resetsAt: "2026-08-28T00:00:00Z", topUpBalance: 0 });
     render(<NewCheckForm initialJobText="x" />);
-    expect(await screen.findByRole("button", { name: /run the check/i })).toBeDisabled();
+    // Wait for the async quota load to re-render before asserting disabled state —
+    // the button mounts enabled (quota starts null) and findByRole would otherwise
+    // return it before the exhausted derivation kicks in (matches the sibling tests).
+    await screen.findByText(/0 of 3 weekly checks left/i);
+    expect(screen.getByRole("button", { name: /run the check/i })).toBeDisabled();
   });
 });
