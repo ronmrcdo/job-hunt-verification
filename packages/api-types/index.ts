@@ -108,6 +108,11 @@ export interface components {
             provenance: "web_verified" | "deterministic" | "user_provided_unverified";
             /** Mitigation */
             mitigation?: string | null;
+            /**
+             * User Safety Alert
+             * @default false
+             */
+            user_safety_alert: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
