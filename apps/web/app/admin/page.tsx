@@ -50,14 +50,14 @@ export default async function AdminConsolePage() {
   return (
     <main id="main-content" className="mx-auto max-w-page px-8 py-16 max-[430px]:px-5">
       <h1 className="sr-only">Admin console</h1>
-      <section id="overview">
+      <section id="overview" className="scroll-mt-[66px]">
         <h2 className="text-lg font-semibold">Overview</h2>
         <p className="mt-1 font-mono text-[12px] text-muted">All-time totals</p>
         <div className="mt-6">
           <OverviewGrid stats={stats} />
         </div>
       </section>
-      <section id="feedback" className="mt-16 border-t border-rule-soft pt-16">
+      <section id="feedback" className="mt-16 border-t border-rule-soft pt-16 scroll-mt-[66px]">
         <h2 className="text-lg font-semibold">Feedback</h2>
         <div className="mt-6">
           <FeedbackTriage result={triage} />
