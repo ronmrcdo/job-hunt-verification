@@ -5,9 +5,10 @@ backend-fetched posting (web_verified); the classifier decides danger, this
 module decides finding type, severity, and the user_safety_alert flag.
 """
 import re
-from html import unescape
+from html.parser import HTMLParser
+from urllib.parse import urljoin
 from app.graph.state import Finding, Provenance
-from app.checks.link_classifier import classify_link, LinkClass, _registrable
+from app.checks.link_classifier import classify_link, LinkClass, registrable
 from app.checks.domain_match import registrable_suffix_match
 
 _URL_RE = re.compile(r"(?:https?://|data:|blob:|javascript:)[^\s)\]}'\"<>]+", re.I)
@@ -17,8 +18,25 @@ _URL_RE = re.compile(r"(?:https?://|data:|blob:|javascript:)[^\s)\]}'\"<>]+", re
 # (ogp.me, schema.org, w3.org/svg), JSON-LD, and <img>/<link>/<script> asset
 # and CDN URLs are page machinery, not links the posting asks you to visit,
 # and scanning them buries the report in false "off-domain link" findings.
-_HREF_RE = re.compile(r"<a\b[^>]*?\bhref\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.I)
 _SCANNED_SCHEMES = ("http://", "https://", "data:", "blob:", "javascript:")
+
+
+class _AnchorHrefParser(HTMLParser):
+    """Collect the `href` of every rendered <a> tag. A real HTML parser — not a
+    regex — so a decoy `data-href`, a `>` inside a quoted attribute, uppercase
+    tags, or an anchor buried in a comment / <script> block can't spoof or hide
+    the true destination. `href` values arrive already entity-decoded."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        for name, value in attrs:
+            if name == "href" and value:
+                self.hrefs.append(value)
 
 _LOGIN_MARKERS = ("login", "log-in", "signin", "sign-in", "account", "verify",
                   "authenticate", "credential", "password")
@@ -30,13 +48,21 @@ def extract_urls(text: str) -> list[str]:
     return _URL_RE.findall(text or "")
 
 
-def extract_anchor_urls(html: str) -> list[str]:
+def extract_anchor_urls(html: str, base_url: str | None = None) -> list[str]:
     """The `href` targets of <a> anchors in fetched HTML — the links a reader
-    can actually click — restricted to scannable schemes. Relative, fragment,
-    and `mailto:` hrefs (same-origin navigation or non-web) are dropped."""
+    can actually click — restricted to scannable schemes. When `base_url` is
+    given, relative hrefs are resolved against it (so a relative runnable
+    download like `/dl/app.apk` on the fetched page is seen as the absolute
+    threat the browser would follow); without it, relative hrefs are dropped.
+    Non-web schemes (`mailto:`, `tel:`) never survive the scheme filter."""
+    parser = _AnchorHrefParser()
+    try:
+        parser.feed(html or "")
+    except Exception:
+        pass  # malformed attacker markup must never crash the scan (§7)
     out: list[str] = []
-    for raw in _HREF_RE.findall(html or ""):
-        url = unescape(raw.strip().strip("\"'").strip())
+    for href in parser.hrefs:
+        url = urljoin(base_url, href.strip()) if base_url else href.strip()
         if url.lower().startswith(_SCANNED_SCHEMES):
             out.append(url)
     return out
@@ -91,17 +117,19 @@ def _finding_for(url: str, lc: LinkClass, ask: str, provenance: Provenance, fid:
 def scan_links(text: str, *, provenance: Provenance, canonical_domain: str | None,
                canonical_verified: bool, id_prefix: str = "linkscan",
                source_ids: list[str] | None = None,
-               html: bool = False, page_domain: str | None = None) -> list[Finding]:
+               html: bool = False, page_domain: str | None = None,
+               page_url: str | None = None) -> list[Finding]:
     """Scan `text` for weaponized-recruitment links.
 
     Pasted job text is scanned as-is — every URL in it was authored by the
     poster. A fetched page (`html=True`) is HTML markup, so only <a href>
-    destinations are scanned; and same-site links back into `page_domain`
-    (the fetched page's own registrable domain) are navigation, not a signal,
-    and are suppressed — except a runnable download or dangerous scheme, which
-    stays a finding even on the page's own host."""
-    urls = extract_anchor_urls(text) if html else extract_urls(text)
-    page_reg = _registrable(page_domain) if page_domain else None
+    destinations are scanned (relative hrefs resolved against `page_url`); and
+    same-site links back into `page_domain` (the fetched page's own registrable
+    domain) are navigation, not a signal, and are suppressed — except a runnable
+    download or dangerous scheme, which stays a finding even on the page's own
+    host."""
+    urls = extract_anchor_urls(text, base_url=page_url) if html else extract_urls(text)
+    page_reg = registrable(page_domain) if page_domain else None
     out: list[Finding] = []
     for i, url in enumerate(urls):
         lc = classify_link(url, canonical_domain=canonical_domain,

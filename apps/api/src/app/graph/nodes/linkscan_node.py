@@ -45,5 +45,6 @@ async def linkscan_node(state: InvestigationState) -> dict:
                                canonical_domain=ref, canonical_verified=verified,
                                id_prefix="linkscan_fetched",
                                source_ids=["src_det_fetched"],
-                               html=True, page_domain=fetched_host or None)
+                               html=True, page_domain=fetched_host or None,
+                               page_url=fetched_url or None)
     return {"raw_findings": findings}
