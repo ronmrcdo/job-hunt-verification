@@ -106,6 +106,47 @@ def test_html_scan_still_flags_genuine_off_site_anchor():
                     page_domain="ph.jobstreet.com")
     assert len(fs) == 1 and "jobsdb.com" in fs[0].claim
 
+def test_extract_anchor_urls_ignores_decoy_href_attributes():
+    # `data-href` / `x-href` are not the anchor's real destination — the browser
+    # navigates to `href`. A substring match must not capture the decoy and miss
+    # the real (dangerous) link. Regression for reviewer Critical #1.
+    html = '<a data-href="benign" href="https://evil.io/malware.apk">x</a>'
+    assert extract_anchor_urls(html) == ["https://evil.io/malware.apk"]
+
+def test_extract_anchor_urls_survives_gt_inside_quoted_attribute():
+    # A `>` inside a quoted attribute value is valid HTML the browser parses
+    # fine; the extractor must not treat it as the tag end and lose the href.
+    # Regression for reviewer Critical #2.
+    html = '<a title=">" href="https://evil.io/malware.apk">x</a>'
+    assert extract_anchor_urls(html) == ["https://evil.io/malware.apk"]
+
+def test_extract_anchor_urls_ignores_anchors_in_comments_and_scripts():
+    # Anchors that never render are not destinations — reviewer Minor #4.
+    assert extract_anchor_urls('<!-- <a href="https://evil.io/x.apk">c</a> -->') == []
+    assert extract_anchor_urls('<script><a href="https://evil.io/x.apk"></script>') == []
+
+def test_extract_anchor_urls_resolves_relative_against_base():
+    # A relative runnable download on an attacker page resolves in the browser
+    # to the attacker's own host — a genuine §9.7 threat, not navigation.
+    # Reviewer Important #3.
+    urls = extract_anchor_urls('<a href="/dl/malware.apk">x</a>',
+                               base_url="https://attacker.io/jobs/1")
+    assert urls == ["https://attacker.io/dl/malware.apk"]
+    # navigation relatives resolve to same-site absolutes (suppressed downstream)
+    urls2 = extract_anchor_urls('<a href="/job/2">x</a><a href="#top">y</a>',
+                                base_url="https://attacker.io/jobs/1")
+    assert urls2 == ["https://attacker.io/job/2", "https://attacker.io/jobs/1#top"]
+
+def test_html_scan_flags_relative_executable_on_attacker_page():
+    # End-to-end through scan_links: a relative .apk on the fetched page is a
+    # download ask even though every navigation relative is same-site-suppressed.
+    html = '<a href="/browse">jobs</a><a href="/dl/app.apk">get the app</a>'
+    fs = scan_links(html, provenance="user_provided_unverified", canonical_domain=None,
+                    canonical_verified=False, html=True,
+                    page_domain="attacker.io", page_url="https://attacker.io/jobs/1")
+    assert len(fs) == 1 and fs[0].user_safety_alert is True
+    assert "download" in fs[0].claim.lower()
+
 def test_html_scan_still_flags_same_site_executable_download():
     # Same-site suppression covers off_domain navigation only — a runnable
     # download on the page's own host is still a §9.7 signal.

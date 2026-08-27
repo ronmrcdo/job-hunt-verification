@@ -63,9 +63,15 @@ class LinkClass:
     host: str | None
 
 
-def _registrable(host: str) -> str:
+def registrable(host: str) -> str:
+    """The registrable domain of `host` (e.g. `id.jobstreet.com` → `jobstreet.com`,
+    `foo.co.uk` → `foo.co.uk`), via the offline PSL snapshot. Public so other
+    checks can share one definition rather than reimplement suffix logic."""
     ext = _EXTRACT(host.lower().rstrip("."))
     return ".".join(p for p in (ext.domain, ext.suffix) if p)
+
+
+_registrable = registrable  # internal callers below keep the old private name
 
 
 def _is_executable_path(path: str) -> bool:
