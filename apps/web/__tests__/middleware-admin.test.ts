@@ -19,9 +19,12 @@ describe("middleware /admin pre-check", () => {
     vi.mocked(updateSession).mockClear();
   });
 
-  it("404s an /admin request with no Cf-Access-Jwt-Assertion header", async () => {
+  it("rewrites an /admin request with no Cf-Access-Jwt-Assertion header to the styled 404 (/_not-found)", async () => {
     const res = await middleware(req("/admin/feedback"));
-    expect(res.status).toBe(404);
+    // NextResponse.rewrite() returns a 200 envelope carrying x-middleware-rewrite;
+    // the /_not-found destination is prerendered with a 404 status, so the client
+    // ultimately gets the branded 404 page — not a bare body-less response.
+    expect(res.headers.get("x-middleware-rewrite")).toContain("/_not-found");
     expect(updateSession).not.toHaveBeenCalled();
   });
 
