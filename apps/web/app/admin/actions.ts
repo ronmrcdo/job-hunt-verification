@@ -3,9 +3,9 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { assertAdmin, AdminAccessError } from "../../../lib/admin/access";
-import { supabaseAdmin } from "../../../lib/supabase/admin";
-import type { Investigation } from "../../../lib/investigations";
+import { assertAdmin, AdminAccessError } from "../../lib/admin/access";
+import { supabaseAdmin } from "../../lib/supabase/admin";
+import type { Investigation } from "../../lib/investigations";
 // PromoteError/buildCandidate live in promote-core.ts, not here: a "use server"
 // file may export only async server actions, so the error class and the sync
 // builder can't be declared in this module.
@@ -47,5 +47,5 @@ export async function promote(formData: FormData) {
   const { error: insErr } = await supabaseAdmin.from("eval_candidate").insert(candidate);
   if (insErr) throw new PromoteError(insErr.message);
 
-  revalidatePath("/admin/feedback");
+  revalidatePath("/admin"); // the console now hosts the queue
 }

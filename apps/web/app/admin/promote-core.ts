@@ -5,7 +5,7 @@
 // to be exported in a 'use server' file"). This module has no directive, so it
 // can export the error type and the sync builder, and it stays trivially
 // unit-testable (no DB client at module load).
-import type { Investigation } from "../../../lib/investigations";
+import type { Investigation } from "../../lib/investigations";
 
 export class PromoteError extends Error {}
 
