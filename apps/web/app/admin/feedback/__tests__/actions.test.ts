@@ -1,15 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
-// buildCandidate is pure (inputs via args, no DB call), but actions.ts is a
-// "use server" module that also imports supabaseAdmin, which constructs a
-// real SupabaseClient at module-load time from process.env — unset under
-// vitest. Stub it out with an explicit factory (not bare auto-mock, which can
-// still execute the module's top-level createClient) so importing the pure
-// fn doesn't blow up on an unrelated DB client. The promote()/DB path stays
+// buildCandidate + PromoteError live in promote-core.ts (no "use server"
+// directive, no DB client at module load), so the pure unit can be imported
+// directly without stubbing supabaseAdmin. The promote()/DB path stays
 // untested here (integration-only), consistent with the repo's convention.
-vi.mock("../../../../lib/supabase/admin", () => ({ supabaseAdmin: {} }));
-
-import { buildCandidate, PromoteError } from "../actions";
+import { buildCandidate, PromoteError } from "../promote-core";
 import type { Investigation } from "../../../../lib/investigations";
 
 const INV = {
