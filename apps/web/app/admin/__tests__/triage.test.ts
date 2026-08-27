@@ -4,9 +4,9 @@ import { describe, it, expect, vi } from "vitest";
 // imports supabaseAdmin, which constructs a real SupabaseClient at
 // module-load time from process.env — unset under vitest. Stub it out the
 // same way as actions.test.ts (see comment there).
-vi.mock("../../../../lib/supabase/admin", () => ({ supabaseAdmin: {} }));
+vi.mock("../../../lib/supabase/admin", () => ({ supabaseAdmin: {} }));
 
-import { toTriageRows, loadTriage } from "../page";
+import { toTriageRows, loadTriage } from "../triage";
 
 // A minimal chainable stand-in for the PostgREST builder: feedback reads end in
 // .order(), investigations reads end in .in(); both resolve to { data, error }.

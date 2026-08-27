@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 // directly without stubbing supabaseAdmin. The promote()/DB path stays
 // untested here (integration-only), consistent with the repo's convention.
 import { buildCandidate, PromoteError } from "../promote-core";
-import type { Investigation } from "../../../../lib/investigations";
+import type { Investigation } from "../../../lib/investigations";
 
 const INV = {
   id: "11112222-3333-4444-5555-666677778888",
