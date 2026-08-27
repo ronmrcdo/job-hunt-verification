@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertAdmin, AdminAccessError } from "../../../lib/admin/access";
 import { supabaseAdmin } from "../../../lib/supabase/admin";
 import type { Database } from "../../../lib/database.types";
@@ -23,6 +24,34 @@ export function toTriageRows(feedback: FeedbackRow[], investigations: InvSlim[])
     .map((f) => ({ feedback: f, investigation: byId.get(f.investigation_id) ?? null }));
 }
 
+export type TriageResult =
+  | { ok: true; rows: TriageRow[] }
+  | { ok: false; error: string };
+
+// Loads the triage queue, keeping a read FAILURE distinct from an empty queue.
+// The two Supabase reads previously discarded their `error` field, so a broken
+// read (e.g. the self-hosted Kong gateway rejecting the admin_ro JWT — see
+// lib/supabase/admin.ts) rendered identically to "no feedback yet": a blank
+// list. We now propagate the message so an admin sees WHY it's empty. Kept a
+// top-level export taking the client as an arg so it's unit-tested against a
+// fake without a live DB (spec Testing).
+export async function loadTriage(client: SupabaseClient<Database>): Promise<TriageResult> {
+  const { data: feedback, error: fErr } = await client
+    .from("feedback")
+    .select("id, investigation_id, user_id, verdict, wrong_finding_id, note, created_at")
+    .order("created_at", { ascending: false });
+  if (fErr) return { ok: false, error: `feedback read failed: ${fErr.message}` };
+
+  const invIds = [...new Set((feedback ?? []).map((f) => f.investigation_id))];
+  const { data: investigations, error: iErr } = await client
+    .from("investigations")
+    .select("id, submission, assessment, findings")
+    .in("id", invIds.length ? invIds : ["00000000-0000-0000-0000-000000000000"]);
+  if (iErr) return { ok: false, error: `investigations read failed: ${iErr.message}` };
+
+  return { ok: true, rows: toTriageRows((feedback ?? []) as FeedbackRow[], (investigations ?? []) as InvSlim[]) };
+}
+
 export default async function AdminFeedbackPage() {
   try {
     await assertAdmin(await headers());
@@ -31,24 +60,21 @@ export default async function AdminFeedbackPage() {
     throw e;
   }
 
-  const { data: feedback } = await supabaseAdmin
-    .from("feedback")
-    .select("id, investigation_id, user_id, verdict, wrong_finding_id, note, created_at")
-    .order("created_at", { ascending: false });
-
-  const invIds = [...new Set((feedback ?? []).map((f) => f.investigation_id))];
-  const { data: investigations } = await supabaseAdmin
-    .from("investigations")
-    .select("id, submission, assessment, findings")
-    .in("id", invIds.length ? invIds : ["00000000-0000-0000-0000-000000000000"]);
-
-  const rows = toTriageRows((feedback ?? []) as FeedbackRow[], (investigations ?? []) as InvSlim[]);
+  const result = await loadTriage(supabaseAdmin);
 
   return (
     <main className="mx-auto max-w-page px-6 py-16">
       <h1 className="text-lg font-semibold">Feedback triage</h1>
+      {!result.ok ? (
+        <p className="mt-6 border border-rule-soft bg-red-50 p-4 font-mono text-[12px] text-red-700">
+          Read failed — the queue could not be loaded, so this is NOT necessarily
+          empty. {result.error}
+        </p>
+      ) : result.rows.length === 0 ? (
+        <p className="mt-6 text-[13px] text-muted">No feedback yet.</p>
+      ) : (
       <ul className="mt-6 flex flex-col gap-6">
-        {rows.map(({ feedback: f, investigation: inv }) => (
+        {result.rows.map(({ feedback: f, investigation: inv }) => (
           <li key={f.id} className="border border-rule-soft p-4">
             <div className="font-mono text-[11px] text-muted">
               {f.verdict} · {f.created_at}
@@ -79,6 +105,7 @@ export default async function AdminFeedbackPage() {
           </li>
         ))}
       </ul>
+      )}
     </main>
   );
 }
