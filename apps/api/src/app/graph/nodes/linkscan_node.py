@@ -37,9 +37,13 @@ async def linkscan_node(state: InvestigationState) -> dict:
         fetched_trusted = bool(ref and fetched_host
                                and registrable_suffix_match(fetched_host, ref))
         prov = "web_verified" if fetched_trusted else "user_provided_unverified"
+        # The fetched posting is raw HTML: scan only its <a href> destinations
+        # (not every namespace/asset/CDN URL in the markup), and treat links
+        # back into the page's own domain as same-site navigation (§7 FP guard).
         findings += scan_links(state.fetched_posting,
                                provenance=prov,
                                canonical_domain=ref, canonical_verified=verified,
                                id_prefix="linkscan_fetched",
-                               source_ids=["src_det_fetched"])
+                               source_ids=["src_det_fetched"],
+                               html=True, page_domain=fetched_host or None)
     return {"raw_findings": findings}
