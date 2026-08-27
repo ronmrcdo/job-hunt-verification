@@ -41,9 +41,9 @@ export async function promote(formData: FormData) {
     promotedBy: email,
   });
 
-  // admin_ro has INSERT but deliberately NO SELECT on eval_candidate, so this
-  // insert must stay SELECT-less — never chain `.select()` here, it would
-  // 403 at runtime.
+  // Keep the write path minimal — never chain `.select()` here. The Overview's
+  // read-only SELECT grant on eval_candidate is unrelated to this insert, which
+  // stays a bare INSERT (one row in, nothing read back).
   const { error: insErr } = await supabaseAdmin.from("eval_candidate").insert(candidate);
   if (insErr) throw new PromoteError(insErr.message);
 

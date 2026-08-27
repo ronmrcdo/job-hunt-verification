@@ -26,17 +26,32 @@ export async function loadConsole(
   return { stats, triage };
 }
 
+// Each helper coalesces BOTH a resolved `{ error }` and a thrown read (network
+// layer) to its fallback, so no single failed read can reject Promise.all and
+// blank the page.
 async function readCandidateStatuses(client: SupabaseClient<Database>): Promise<string[]> {
-  const { data } = await client.from("eval_candidate").select("status");
-  return (data ?? []).map((r) => r.status as string);
+  try {
+    const { data } = await client.from("eval_candidate").select("status");
+    return (data ?? []).map((r) => r.status as string);
+  } catch {
+    return [];
+  }
 }
 async function readInvestigationsCount(client: SupabaseClient<Database>): Promise<number> {
-  const { count } = await client.from("investigations").select("*", { head: true, count: "exact" });
-  return count ?? 0;
+  try {
+    const { count } = await client.from("investigations").select("*", { head: true, count: "exact" });
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
 async function readRegisteredUsers(client: SupabaseClient<Database>): Promise<number> {
-  const { data } = await client.rpc("admin_registered_user_count");
-  return typeof data === "number" ? data : 0;
+  try {
+    const { data } = await client.rpc("admin_registered_user_count");
+    return typeof data === "number" ? data : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export default async function AdminConsolePage() {

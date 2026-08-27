@@ -5,7 +5,7 @@ import { PromoteButton } from "./PromoteButton";
 
 type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 // Only the columns the queue renders.
-type InvSlim = { id: string; submission: unknown; assessment: unknown; findings: { id: string; claim: string }[] | null };
+type InvSlim = { id: string; submission: unknown; findings: { id: string; claim: string }[] | null };
 
 export interface TriageRow {
   feedback: FeedbackRow;
@@ -25,21 +25,27 @@ export type TriageResult =
   | { ok: false; error: string };
 
 // Loads the triage queue, keeping a read FAILURE distinct from an empty queue.
+// A thrown read (network layer) is folded into the same { ok: false } result as
+// a resolved { error }, so a failure surfaces the banner rather than blanking.
 export async function loadTriage(client: SupabaseClient<Database>): Promise<TriageResult> {
-  const { data: feedback, error: fErr } = await client
-    .from("feedback")
-    .select("id, investigation_id, user_id, verdict, wrong_finding_id, note, created_at")
-    .order("created_at", { ascending: false });
-  if (fErr) return { ok: false, error: `feedback read failed: ${fErr.message}` };
+  try {
+    const { data: feedback, error: fErr } = await client
+      .from("feedback")
+      .select("id, investigation_id, user_id, verdict, wrong_finding_id, note, created_at")
+      .order("created_at", { ascending: false });
+    if (fErr) return { ok: false, error: `feedback read failed: ${fErr.message}` };
 
-  const invIds = [...new Set((feedback ?? []).map((f) => f.investigation_id))];
-  const { data: investigations, error: iErr } = await client
-    .from("investigations")
-    .select("id, submission, assessment, findings")
-    .in("id", invIds.length ? invIds : ["00000000-0000-0000-0000-000000000000"]);
-  if (iErr) return { ok: false, error: `investigations read failed: ${iErr.message}` };
+    const invIds = [...new Set((feedback ?? []).map((f) => f.investigation_id))];
+    const { data: investigations, error: iErr } = await client
+      .from("investigations")
+      .select("id, submission, findings")
+      .in("id", invIds.length ? invIds : ["00000000-0000-0000-0000-000000000000"]);
+    if (iErr) return { ok: false, error: `investigations read failed: ${iErr.message}` };
 
-  return { ok: true, rows: toTriageRows((feedback ?? []) as FeedbackRow[], (investigations ?? []) as InvSlim[]) };
+    return { ok: true, rows: toTriageRows((feedback ?? []) as FeedbackRow[], (investigations ?? []) as InvSlim[]) };
+  } catch (e) {
+    return { ok: false, error: `triage read failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 
 // Presentational: the console supplies the <section>/<h2> wrapper. Renders the

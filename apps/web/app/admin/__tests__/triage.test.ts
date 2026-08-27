@@ -28,12 +28,12 @@ describe("toTriageRows", () => {
       { id: "fb2", investigation_id: "inv2", verdict: "too_low", wrong_finding_id: "f_1", note: null, created_at: "2026-08-26T00:00:00Z" },
     ];
     const investigations = [
-      { id: "inv1", submission: { job_text: "a" }, assessment: { band: "HIGH" }, findings: [] },
-      { id: "inv2", submission: { job_text: "b" }, assessment: { band: "LOW" }, findings: [{ id: "f_1", claim: "c" }] },
+      { id: "inv1", submission: { job_text: "a" }, findings: [] },
+      { id: "inv2", submission: { job_text: "b" }, findings: [{ id: "f_1", claim: "c" }] },
     ];
     const rows = toTriageRows(feedback as never, investigations as never);
     expect(rows.map((r) => r.feedback.id)).toEqual(["fb2", "fb1"]); // newest first
-    expect(rows[0].investigation?.assessment).toEqual({ band: "LOW" });
+    expect(rows[0].investigation?.id).toEqual("inv2"); // joined to the right investigation
   });
 
   it("tolerates feedback whose investigation is missing", () => {
