@@ -24,6 +24,9 @@ export function AdminHeader() {
             <a href="#feedback" className="text-[13px] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink">
               Feedback
             </a>
+            <a href="#export" className="text-[13px] text-secondary transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:text-ink">
+              Export
+            </a>
           </nav>
         </div>
       </header>

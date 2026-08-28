@@ -10,11 +10,23 @@ no DB. `main()` reads/updates eval_candidate over a privileged DB connection
 (operator env PROMOTE_DATABASE_URL) — not exercised in CI, like the repo's other
 DB-gated code.
 
-Run:
+Two ways in, because production Postgres sits on an internal Coolify network
+with no route from an operator laptop:
+
+    # A. Direct DB (only where the database is actually reachable):
     cd apps/api && PROMOTE_DATABASE_URL=... uv run scripts/promote_feedback.py
+
+    # B. File handoff (the normal path): download the pending candidates from
+    #    /admin, merge them here, PR the diff, then mark them exported back in
+    #    /admin using the ids this prints.
+    cd apps/api && uv run scripts/promote_feedback.py --from-file ~/Downloads/candidates.json
+
+Both modes share `candidate_to_case`/`append_new_cases`, so the dataset case
+shape has exactly one definition regardless of how the rows arrived.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -105,7 +117,65 @@ def reconcile(
     return new_dataset, export_ids
 
 
+def load_candidates(raw: str) -> list[dict[str, Any]]:
+    """Parse the JSON downloaded from /admin's eval export.
+
+    Accepts the download's envelope ({"generated_at", "candidates": [...]}) or a
+    bare list, so a hand-trimmed file still works. Anything else is a paste of
+    the wrong thing — fail loudly rather than silently merging zero cases.
+    """
+    payload = json.loads(raw)
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict) and isinstance(payload.get("candidates"), list):
+        return payload["candidates"]
+    raise ValueError("expected a list of candidates, or an object with a 'candidates' list")
+
+
+def merge_from_file(src: pathlib.Path, dataset_path: pathlib.Path = DATASET) -> tuple[list[str], list[str]]:
+    """Merge downloaded candidates into the dataset. No DB, no network.
+
+    Returns (added case ids, candidate ids safe to mark exported). The status
+    flip happens later and elsewhere (the /admin action), so this half of the
+    flow can be re-run freely: `append_new_cases` dedupes on the stable case id,
+    which makes a second run a no-op rather than a duplicate.
+
+    Unlike main(), this does NOT write to a temp file and swap: with no DB
+    transaction to order against, the failure mode that protects against cannot
+    occur — and a half-written dataset.json in a git working tree is visible in
+    `git diff` anyway.
+    """
+    dataset = json.loads(dataset_path.read_text())
+    old_ids = {c["id"] for c in dataset}
+    candidates = load_candidates(src.read_text())
+    new_dataset, export_ids = reconcile(dataset, candidates)
+    added = [c["id"] for c in new_dataset if c["id"] not in old_ids]
+    dataset_path.write_text(json.dumps(new_dataset, indent=2) + "\n")
+    return added, export_ids
+
+
 def main() -> None:  # pragma: no cover - DB-bound operator entrypoint
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--from-file",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="Merge candidates from a JSON file downloaded from /admin instead of reading the DB.",
+    )
+    args = parser.parse_args()
+
+    if args.from_file:
+        added, export_ids = merge_from_file(args.from_file)
+        if not added:
+            print("No new cases — every candidate in that file is already in the dataset.")
+        else:
+            print(f"Appended {len(added)} case(s): {', '.join(added)}")
+            print("Review `git diff apps/api/eval/dataset.json` and open a PR — nothing was committed.")
+        if export_ids:
+            print("\nAfter the PR merges, paste these ids into /admin → Mark exported:")
+            print(",".join(export_ids))
+        return
+
     import psycopg  # local import so unit tests need no driver
 
     url = os.environ["PROMOTE_DATABASE_URL"]
