@@ -470,5 +470,21 @@
       "encoded"
     ],
     "v1_only": false
+  },
+  {
+    "id": "feedback_ff4f00fe_963a6c0e4e36",
+    "description": "Promoted from feedback on investigation ff4f00fe-e688-4ea7-98f0-d819c4308e98.",
+    "submission": {
+      "job_text": "https://ph.jobstreet.com/job/93712310?ref=search-standalone&type=standard&origin=showNewTab#sol=44ce9c9f3e22aea62efa9a948edccceef9c832ae"
+    },
+    "expected_band": "LOW",
+    "expected_max_band": "LOW",
+    "tags": [
+      "legi",
+      "job_portal",
+      "source:feedback"
+    ],
+    "origin_investigation_id": "ff4f00fe-e688-4ea7-98f0-d819c4308e98",
+    "v1_only": false
   }
 ]
