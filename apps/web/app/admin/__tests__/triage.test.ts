@@ -80,3 +80,38 @@ describe("loadTriage", () => {
     expect(res.ok === true && res.rows).toEqual([]);
   });
 });
+
+// The fake client above echoes back whatever data it is handed, so asserting on
+// the returned rows alone would pass even if the query never asked for the
+// column. Capture the select strings and assert the request itself.
+function selectSpyClient() {
+  const selects: Record<string, string> = {};
+  const client = {
+    from(table: string) {
+      if (table === "feedback") {
+        return {
+          select: (cols: string) => {
+            selects.feedback = cols;
+            return { order: () => Promise.resolve({ data: [{ id: "fb1", investigation_id: "inv1", verdict: "agree", wrong_finding_id: null, note: null, created_at: "2026-08-26T00:00:00Z" }], error: null }) };
+          },
+        };
+      }
+      return {
+        select: (cols: string) => {
+          selects.investigations = cols;
+          return { in: () => Promise.resolve({ data: [{ id: "inv1", submission: {}, assessment: { band: "HIGH", confidence: "LOW" }, findings: [] }], error: null }) };
+        },
+      };
+    },
+  } as never;
+  return { client, selects };
+}
+
+describe("loadTriage assessment", () => {
+  it("asks for the assessment so the queue can show the band that was returned", async () => {
+    const { client, selects } = selectSpyClient();
+    const res = await loadTriage(client);
+    expect(selects.investigations).toMatch(/\bassessment\b/);
+    expect(res.ok === true && res.rows[0].investigation?.assessment).toEqual({ band: "HIGH", confidence: "LOW" });
+  });
+});
