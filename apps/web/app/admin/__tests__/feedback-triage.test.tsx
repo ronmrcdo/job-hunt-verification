@@ -181,3 +181,47 @@ describe("FeedbackTriage assessment column", () => {
     expect(screen.getByRole("combobox", { name: /expected max band/i })).toHaveValue("LOW");
   });
 });
+
+describe("FeedbackTriage promotion status", () => {
+  const rows = [row({ id: "fb1", investigation_id: "inv1" }), row({ id: "fb2", investigation_id: "inv2" })];
+
+  it("leaves the promote control live on a row nobody has promoted", () => {
+    render(<FeedbackTriage result={{ ok: true, rows: [row()] }} promotions={new Map()} />);
+    expect(screen.getByRole("button", { name: /promote/i })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: /expected max band/i })).toBeEnabled();
+  });
+
+  it("marks a promoted row and disables only that row's control", () => {
+    const promotions = new Map([
+      ["inv1", { state: "promoted", expectedMaxBand: "HIGH", tags: ["staffing_agency"], exportedAt: null }],
+    ]);
+    render(<FeedbackTriage result={{ ok: true, rows }} promotions={promotions as never} />);
+    const cells = screen.getAllByRole("cell");
+    const promoted = cells[cells.length - 1 - 0]; // last cell = fb2's promote cell
+    expect(screen.getByText(/awaiting export/i)).toBeInTheDocument();
+    // The promoted row's control is locked; the untouched row's is not.
+    const buttons = screen.getAllByRole("button", { name: /promote/i });
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[1]).toBeEnabled();
+    expect(promoted).toBeInTheDocument();
+    // It shows what was promoted, not an empty form.
+    expect(screen.getAllByRole("combobox", { name: /expected max band/i })[0]).toHaveValue("HIGH");
+    expect(screen.getAllByRole("textbox", { name: /tags/i })[0]).toHaveValue("staffing_agency");
+  });
+
+  it("marks an exported row with the date it left, and disables its control", () => {
+    const promotions = new Map([
+      ["inv1", { state: "exported", expectedMaxBand: "LOW", tags: [], exportedAt: "2026-08-28T09:05:00Z" }],
+    ]);
+    render(<FeedbackTriage result={{ ok: true, rows: [row()] }} promotions={promotions as never} />);
+    expect(screen.getByText(/exported/i)).toBeInTheDocument();
+    expect(screen.getByText(/28\.08\.2026/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /promote/i })).toBeDisabled();
+  });
+
+  it("locks every control when the promotion status itself could not be read", () => {
+    render(<FeedbackTriage result={{ ok: true, rows }} promotions={null} />);
+    expect(screen.getAllByRole("button", { name: /promote/i })[0]).toBeDisabled();
+    expect(screen.getAllByText(/status unavailable/i)).toHaveLength(2);
+  });
+});

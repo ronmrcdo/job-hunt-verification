@@ -4,6 +4,7 @@ import { defang } from "../../lib/defang";
 import { pad2 } from "../../lib/format";
 import { promote } from "./actions";
 import { PromoteButton } from "./PromoteButton";
+import type { CandidateStatusRow } from "./export";
 
 type FeedbackRow = Database["public"]["Tables"]["feedback"]["Row"];
 // Only the columns the queue renders.
@@ -54,6 +55,46 @@ export async function loadTriage(client: SupabaseClient<Database>): Promise<Tria
   } catch (e) {
     return { ok: false, error: `triage read failed: ${e instanceof Error ? e.message : String(e)}` };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Promotion status — is this feedback's investigation already in the eval
+// pipeline? Keyed by investigation, because that is what a candidate references
+// (two feedback rows on the same investigation share one promotion).
+// ---------------------------------------------------------------------------
+
+export interface PromotionState {
+  state: "promoted" | "exported";
+  expectedMaxBand: string;
+  tags: string[];
+  exportedAt: string | null;
+}
+
+export type PromotionIndex = Map<string, PromotionState>;
+
+// A pending candidate outranks an exported one: the DB allows a fresh promote
+// once the previous candidate is exported, so an investigation can carry both,
+// and the pending one is the state the operator must not duplicate. Among
+// exported rows the most recent export wins.
+function outranks(next: PromotionState, current: PromotionState): boolean {
+  if (next.state !== current.state) return next.state === "promoted";
+  return (next.exportedAt ?? "") > (current.exportedAt ?? "");
+}
+
+export function toPromotionIndex(candidates: CandidateStatusRow[]): PromotionIndex {
+  const index: PromotionIndex = new Map();
+  for (const c of candidates) {
+    if (c.status !== "promoted" && c.status !== "exported") continue;
+    const next: PromotionState = {
+      state: c.status,
+      expectedMaxBand: c.expected_max_band,
+      tags: c.tags ?? [],
+      exportedAt: c.exported_at,
+    };
+    const current = index.get(c.investigation_id);
+    if (!current || outranks(next, current)) index.set(c.investigation_id, next);
+  }
+  return index;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +177,16 @@ export function summarise(rows: TriageRow[]): string {
 const TH = "px-4 py-3 font-mono text-[11px] font-normal uppercase tracking-wide text-muted";
 const TD = "px-4 py-4 align-top";
 
-export function FeedbackTriage({ result }: { result: TriageResult }) {
+// `promotions` is the investigation→candidate index; `null` means the candidate
+// read itself failed, which is NOT the same as "nothing is promoted" — every
+// control is then locked rather than inviting a duplicate promote.
+export function FeedbackTriage({
+  result,
+  promotions = new Map(),
+}: {
+  result: TriageResult;
+  promotions?: PromotionIndex | null;
+}) {
   if (!result.ok) {
     return (
       <p role="alert" className="border border-critical-rule bg-critical-tint p-4 font-mono text-[12px] text-critical">
@@ -167,7 +217,12 @@ export function FeedbackTriage({ result }: { result: TriageResult }) {
           </thead>
           <tbody>
             {result.rows.map(({ feedback: f, investigation: inv }) => (
-              <TriageTableRow key={f.id} feedback={f} investigation={inv} />
+              <TriageTableRow
+                key={f.id}
+                feedback={f}
+                investigation={inv}
+                promotion={promotions ? promotions.get(f.investigation_id) ?? null : "unknown"}
+              />
             ))}
           </tbody>
         </table>
@@ -176,16 +231,45 @@ export function FeedbackTriage({ result }: { result: TriageResult }) {
   );
 }
 
-function TriageTableRow({ feedback: f, investigation: inv }: TriageRow) {
+// null = never promoted (control live); "unknown" = status unreadable.
+type RowPromotion = PromotionState | null | "unknown";
+
+const BADGE = "inline-block border px-2 py-[3px] font-mono text-[11px]";
+
+function PromotionBadge({ promotion }: { promotion: PromotionState | "unknown" }) {
+  if (promotion === "unknown") {
+    return (
+      <span className={`${BADGE} border-critical-rule text-critical`}>
+        Promote status unavailable — reload before promoting
+      </span>
+    );
+  }
+  if (promotion.state === "exported") {
+    return (
+      <span className={`${BADGE} border-legit text-legit`}>
+        Exported · {promotion.exportedAt ? formatFeedbackStamp(promotion.exportedAt) : "date unknown"}
+      </span>
+    );
+  }
+  return <span className={`${BADGE} border-rule-strong text-secondary`}>Promoted · awaiting export</span>;
+}
+
+function TriageTableRow({ feedback: f, investigation: inv, promotion }: TriageRow & { promotion: RowPromotion }) {
   const submission = asSubmission(inv?.submission);
   const flagged = f.wrong_finding_id ? inv?.findings?.find((x) => x.id === f.wrong_finding_id) ?? null : null;
   const assessment = inv?.assessment ?? null;
   const bandId = `band-${f.id}`;
   const tagsId = `tags-${f.id}`;
+  // Locked whenever this investigation is already in the eval pipeline (pending
+  // OR exported) and whenever the status could not be read. The DB's partial
+  // unique index rejects a second pending candidate anyway; disabling the form
+  // turns that 500 into a state the operator can see before clicking.
+  const promoted = promotion && promotion !== "unknown" ? promotion : null;
+  const locked = promotion !== null;
   return (
     <tr className="border-t border-rule-soft transition-colors duration-150 [transition-timing-function:var(--ease-out)] hover:bg-surface-alt">
       <td className={TD}>
-        <span className={`inline-block border px-2 py-[3px] font-mono text-[11px] ${VERDICT_TONE[f.verdict] ?? "border-rule-strong text-secondary"}`}>
+        <span className={`${BADGE} ${VERDICT_TONE[f.verdict] ?? "border-rule-strong text-secondary"}`}>
           {verdictLabel(f.verdict)}
         </span>
       </td>
@@ -246,42 +330,54 @@ function TriageTableRow({ feedback: f, investigation: inv }: TriageRow) {
         )}
       </td>
       <td className={TD}>
-        <form action={promote} className="flex flex-col gap-2">
-          <input type="hidden" name="investigation_id" value={f.investigation_id} />
-          <input type="hidden" name="wrong_finding_id" value={f.wrong_finding_id ?? ""} />
-          <label htmlFor={bandId} className="font-mono text-[11px] uppercase tracking-wide text-muted">
-            Expected max band
-          </label>
-          {/* Preselected to the band that was actually returned: an "agree"
-              verdict is then a single click, and a "too high" verdict starts
-              from the value the operator is correcting rather than from an
-              arbitrary LOW. */}
-          <select
-            id={bandId}
-            name="expected_max_band"
-            defaultValue={assessment && BANDS.includes(assessment.band as (typeof BANDS)[number]) ? assessment.band : "LOW"}
-            className="h-9 border border-rule-strong bg-page px-2 text-[13px]"
-          >
-            {BANDS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-          <label htmlFor={tagsId} className="mt-1 font-mono text-[11px] uppercase tracking-wide text-muted">
-            Tags
-          </label>
-          <input
-            id={tagsId}
-            name="tags"
-            placeholder="legit, staffing_agency"
-            aria-describedby={`${tagsId}-hint`}
-            className="h-9 border border-rule-strong bg-page px-2 text-[13px] placeholder:text-faint"
-          />
-          <span id={`${tagsId}-hint`} className="font-mono text-[11px] text-faint">
-            Comma-separated
-          </span>
-          <PromoteButton />
+        {promotion !== null && <PromotionBadge promotion={promotion} />}
+        <form action={promote} className={promotion !== null ? "mt-3" : undefined}>
+          {/* One disabled fieldset rather than a per-control flag: it locks the
+              submit button too, so an already-promoted row cannot be promoted
+              twice from a stale page. The values stay rendered — read-only, they
+              show WHAT was promoted, which is the answer to the operator's next
+              question. */}
+          <fieldset disabled={locked} className="m-0 flex flex-col gap-2 border-0 p-0 disabled:opacity-60">
+            <input type="hidden" name="investigation_id" value={f.investigation_id} />
+            <input type="hidden" name="wrong_finding_id" value={f.wrong_finding_id ?? ""} />
+            <label htmlFor={bandId} className="font-mono text-[11px] uppercase tracking-wide text-muted">
+              Expected max band
+            </label>
+            {/* Preselected to the band that was actually returned: an "agree"
+                verdict is then a single click, and a "too high" verdict starts
+                from the value the operator is correcting rather than from an
+                arbitrary LOW. */}
+            <select
+              id={bandId}
+              name="expected_max_band"
+              defaultValue={
+                promoted?.expectedMaxBand ??
+                (assessment && BANDS.includes(assessment.band as (typeof BANDS)[number]) ? assessment.band : "LOW")
+              }
+              className="h-9 border border-rule-strong bg-page px-2 text-[13px]"
+            >
+              {BANDS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+            <label htmlFor={tagsId} className="mt-1 font-mono text-[11px] uppercase tracking-wide text-muted">
+              Tags
+            </label>
+            <input
+              id={tagsId}
+              name="tags"
+              defaultValue={promoted ? promoted.tags.join(", ") : undefined}
+              placeholder="legit, staffing_agency"
+              aria-describedby={`${tagsId}-hint`}
+              className="h-9 border border-rule-strong bg-page px-2 text-[13px] placeholder:text-faint"
+            />
+            <span id={`${tagsId}-hint`} className="font-mono text-[11px] text-faint">
+              Comma-separated
+            </span>
+            <PromoteButton />
+          </fieldset>
         </form>
       </td>
     </tr>

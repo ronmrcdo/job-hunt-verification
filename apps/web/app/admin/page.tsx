@@ -5,8 +5,8 @@ import { assertAdmin, AdminAccessError } from "../../lib/admin/access";
 import { supabaseAdmin } from "../../lib/supabase/admin";
 import type { Database } from "../../lib/database.types";
 import { toDashboardStats, type DashboardStats } from "./stats";
-import { loadTriage, FeedbackTriage, type TriageResult } from "./triage";
-import { loadPendingCandidates, type PendingResult } from "./export";
+import { loadTriage, FeedbackTriage, toPromotionIndex, type TriageResult, type PromotionIndex } from "./triage";
+import { loadPendingCandidates, loadAllCandidates, type PendingResult } from "./export";
 import { OverviewGrid } from "./OverviewGrid";
 import { EvalExport } from "./EvalExport";
 
@@ -16,30 +16,26 @@ import { EvalExport } from "./EvalExport";
 // no duplicate feedback query.
 export async function loadConsole(
   client: SupabaseClient<Database>,
-): Promise<{ stats: DashboardStats; triage: TriageResult; pending: PendingResult }> {
-  const [triage, pending, candidateStatuses, investigationsTotal, registeredUsers] = await Promise.all([
+): Promise<{ stats: DashboardStats; triage: TriageResult; pending: PendingResult; promotions: PromotionIndex | null }> {
+  // One eval_candidate read serves both consumers: the Overview's status tally
+  // and the queue's per-row promotion badge. `null` = that read failed, which
+  // the queue must render as "unknown", never as "nothing promoted".
+  const [triage, pending, candidates, investigationsTotal, registeredUsers] = await Promise.all([
     loadTriage(client),
     loadPendingCandidates(client),
-    readCandidateStatuses(client),
+    loadAllCandidates(client),
     readInvestigationsCount(client),
     readRegisteredUsers(client),
   ]);
   const feedbackVerdicts = triage.ok ? triage.rows.map((r) => r.feedback.verdict) : [];
+  const candidateStatuses = (candidates ?? []).map((c) => c.status);
   const stats = toDashboardStats({ registeredUsers, investigationsTotal, feedbackVerdicts, candidateStatuses });
-  return { stats, triage, pending };
+  return { stats, triage, pending, promotions: candidates ? toPromotionIndex(candidates) : null };
 }
 
 // Each helper coalesces BOTH a resolved `{ error }` and a thrown read (network
 // layer) to its fallback, so no single failed read can reject Promise.all and
 // blank the page.
-async function readCandidateStatuses(client: SupabaseClient<Database>): Promise<string[]> {
-  try {
-    const { data } = await client.from("eval_candidate").select("status");
-    return (data ?? []).map((r) => r.status as string);
-  } catch {
-    return [];
-  }
-}
 async function readInvestigationsCount(client: SupabaseClient<Database>): Promise<number> {
   try {
     const { count } = await client.from("investigations").select("*", { head: true, count: "exact" });
@@ -64,7 +60,7 @@ export default async function AdminConsolePage() {
     if (e instanceof AdminAccessError) notFound(); // 404, never 403
     throw e;
   }
-  const { stats, triage, pending } = await loadConsole(supabaseAdmin);
+  const { stats, triage, pending, promotions } = await loadConsole(supabaseAdmin);
   return (
     <main id="main-content" className="mx-auto max-w-page px-8 py-16 max-[430px]:px-5">
       <h1 className="sr-only">Admin console</h1>
@@ -78,7 +74,7 @@ export default async function AdminConsolePage() {
       <section id="feedback" className="mt-16 border-t border-rule-soft pt-16 scroll-mt-[66px]">
         <h2 className="text-lg font-semibold">Feedback</h2>
         <div className="mt-6">
-          <FeedbackTriage result={triage} />
+          <FeedbackTriage result={triage} promotions={promotions} />
         </div>
       </section>
       <section id="export" className="mt-16 border-t border-rule-soft pt-16 scroll-mt-[66px]">
