@@ -70,6 +70,25 @@ describe("loadConsole", () => {
     expect(pending.ok === true && pending.candidates).toHaveLength(1);
   });
 
+  it("indexes the promotion status of each investigation for the queue", async () => {
+    const { promotions } = await loadConsole(fakeClient());
+    expect(promotions).toBeInstanceOf(Map);
+  });
+
+  it("reports an UNKNOWN promotion status (null) rather than 'nothing promoted' when that read fails", async () => {
+    const broken = {
+      from(table: string) {
+        if (table === "feedback") return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
+        if (table === "investigations") return { select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) };
+        if (table === "eval_candidate") return { select: () => Promise.resolve({ data: null, error: { message: "boom" } }) };
+        return {};
+      },
+      rpc: () => Promise.resolve({ data: 0, error: null }),
+    } as never;
+    const { promotions } = await loadConsole(broken);
+    expect(promotions).toBeNull();
+  });
+
   it("coalesces failed reads to zero and derives no verdicts from a failed triage read", async () => {
     const broken = {
       from(table: string) {

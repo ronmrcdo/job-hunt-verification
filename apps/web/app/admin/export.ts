@@ -60,3 +60,28 @@ export function parseCandidateIds(raw: string): string[] {
   if (bad.length) throw new ExportError(`not candidate ids: ${bad.join(", ")}`);
   return [...new Set(tokens)];
 }
+
+// Every candidate row the triage queue needs to say whether an investigation is
+// already in the eval pipeline. Unlike loadPendingCandidates this is unfiltered:
+// an EXPORTED candidate still means "don't promote this again", so both statuses
+// must come back.
+export type CandidateStatusRow = Pick<
+  CandidateRow,
+  "investigation_id" | "status" | "expected_max_band" | "tags" | "exported_at"
+>;
+
+const STATUS_COLUMNS = "investigation_id, status, expected_max_band, tags, exported_at";
+
+// Returns null — never [] — on a failed read. The queue renders an unknown
+// status as "unavailable" and locks its controls, because an unreadable status
+// rendered as "not promoted" invites a duplicate promote of a case already in
+// the dataset.
+export async function loadAllCandidates(client: SupabaseClient<Database>): Promise<CandidateStatusRow[] | null> {
+  try {
+    const { data, error } = await client.from("eval_candidate").select(STATUS_COLUMNS);
+    if (error) return null;
+    return (data ?? []) as CandidateStatusRow[];
+  } catch {
+    return null;
+  }
+}

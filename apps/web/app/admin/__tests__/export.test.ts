@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { loadPendingCandidates, toExportPayload, parseCandidateIds, ExportError } from "../export";
+import { loadPendingCandidates, loadAllCandidates, toExportPayload, parseCandidateIds, ExportError } from "../export";
 
 const ID_A = "11111111-1111-1111-1111-111111111111";
 const ID_B = "22222222-2222-2222-2222-222222222222";
@@ -73,5 +73,45 @@ describe("parseCandidateIds", () => {
 
   it("rejects an empty paste", () => {
     expect(() => parseCandidateIds("   \n ")).toThrow(ExportError);
+  });
+});
+
+// A candidate read with no .eq() filter: select(...) resolves directly.
+function fakeAllClient(res: unknown) {
+  const calls: { cols?: string } = {};
+  const client = {
+    from: () => ({
+      select: (cols: string) => {
+        calls.cols = cols;
+        return Promise.resolve(res);
+      },
+    }),
+  } as never;
+  return { client, calls };
+}
+
+describe("loadAllCandidates", () => {
+  it("reads every candidate with the columns the queue's status badge needs", async () => {
+    const { client, calls } = fakeAllClient({ data: [], error: null });
+    await loadAllCandidates(client);
+    for (const col of ["investigation_id", "status", "expected_max_band", "tags", "exported_at"]) {
+      expect(calls.cols).toContain(col);
+    }
+  });
+
+  it("returns null on a failed read, so an unknown status is never rendered as 'not promoted'", async () => {
+    const { client } = fakeAllClient({ data: null, error: { message: "permission denied" } });
+    expect(await loadAllCandidates(client)).toBeNull();
+  });
+
+  it("returns null when the read throws at the network layer", async () => {
+    const client = { from: () => ({ select: () => Promise.reject(new Error("ECONNRESET")) }) } as never;
+    expect(await loadAllCandidates(client)).toBeNull();
+  });
+
+  it("returns the rows when the read succeeds", async () => {
+    const rows = [{ investigation_id: "inv1", status: "promoted", expected_max_band: "HIGH", tags: [], exported_at: null }];
+    const { client } = fakeAllClient({ data: rows, error: null });
+    expect(await loadAllCandidates(client)).toEqual(rows);
   });
 });

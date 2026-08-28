@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 // same way as actions.test.ts (see comment there).
 vi.mock("../../../lib/supabase/admin", () => ({ supabaseAdmin: {} }));
 
-import { toTriageRows, loadTriage } from "../triage";
+import { toTriageRows, loadTriage, toPromotionIndex } from "../triage";
 
 // A minimal chainable stand-in for the PostgREST builder: feedback reads end in
 // .order(), investigations reads end in .in(); both resolve to { data, error }.
@@ -113,5 +113,46 @@ describe("loadTriage assessment", () => {
     const res = await loadTriage(client);
     expect(selects.investigations).toMatch(/\bassessment\b/);
     expect(res.ok === true && res.rows[0].investigation?.assessment).toEqual({ band: "HIGH", confidence: "LOW" });
+  });
+});
+
+describe("toPromotionIndex", () => {
+  const cand = (over: Record<string, unknown> = {}) => ({
+    investigation_id: "inv1",
+    status: "promoted",
+    expected_max_band: "HIGH",
+    tags: ["legit"],
+    exported_at: null,
+    ...over,
+  });
+
+  it("indexes a pending candidate by its investigation, carrying what was promoted", () => {
+    const index = toPromotionIndex([cand()] as never);
+    expect(index.get("inv1")).toEqual({ state: "promoted", expectedMaxBand: "HIGH", tags: ["legit"], exportedAt: null });
+  });
+
+  it("marks an exported candidate with the timestamp it left on", () => {
+    const index = toPromotionIndex([cand({ status: "exported", exported_at: "2026-08-28T09:00:00Z" })] as never);
+    expect(index.get("inv1")).toMatchObject({ state: "exported", exportedAt: "2026-08-28T09:00:00Z" });
+  });
+
+  it("prefers the still-pending candidate when an investigation was promoted again after an export", () => {
+    const index = toPromotionIndex([
+      cand({ status: "exported", expected_max_band: "LOW", exported_at: "2026-08-20T00:00:00Z" }),
+      cand({ status: "promoted", expected_max_band: "CRITICAL" }),
+    ] as never);
+    expect(index.get("inv1")).toMatchObject({ state: "promoted", expectedMaxBand: "CRITICAL" });
+  });
+
+  it("keeps the most recent export when an investigation was exported more than once", () => {
+    const index = toPromotionIndex([
+      cand({ status: "exported", expected_max_band: "LOW", exported_at: "2026-08-20T00:00:00Z" }),
+      cand({ status: "exported", expected_max_band: "HIGH", exported_at: "2026-08-27T00:00:00Z" }),
+    ] as never);
+    expect(index.get("inv1")).toMatchObject({ state: "exported", expectedMaxBand: "HIGH" });
+  });
+
+  it("leaves an investigation nobody promoted out of the index", () => {
+    expect(toPromotionIndex([] as never).get("inv1")).toBeUndefined();
   });
 });
