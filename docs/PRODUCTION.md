@@ -629,6 +629,51 @@ unset (the silent no-op) — see §5 Step 1.
 (`INNGEST_SERVE_ORIGIN`) during sync. To force a re-sync, use "Sync new app" in the
 dashboard with `http://api-worker:8000/api/inngest`.
 
+### 6a. Promoting feedback into the eval dataset
+
+User feedback becomes an eval case in four steps. Step 2 runs on your machine
+because the output is a **diff against `apps/api/eval/dataset.json`**, which lives
+in git — the api image copies `src`, `scripts`, and `supabase`, but **not**
+`eval/`, so the merge cannot run inside `api-worker`.
+
+Production Postgres is on the internal Coolify network with no route from a
+laptop, so the candidates cross that boundary as a **file downloaded from
+`/admin`**, not over a DB connection. No tunnel, no exposed port.
+
+1. **Promote** — in `/admin`, set `expected_max_band` + tags on a feedback row and
+   press Promote. That inserts an `eval_candidate` with `status='promoted'`.
+2. **Download and merge** — `/admin` → *Eval export* → **Download candidates**,
+   then locally:
+
+   ```bash
+   cd apps/api && uv run scripts/promote_feedback.py --from-file ~/Downloads/eval-candidates-YYYY-MM-DD.json
+   ```
+
+   It appends dataset-shaped cases (stable id, `source:feedback` tag,
+   `origin_investigation_id`), prints the case ids it added, and prints the
+   candidate ids for step 4. It never commits, pushes, or touches the DB.
+3. **PR** — review `git diff apps/api/eval/dataset.json` and open a pull request.
+   The path filter fires the required `live-eval` job, which fails the merge if the
+   false-positive rate is nonzero or any case breaches its ceiling. Merged = canon.
+4. **Drain the queue** — **only after the PR merges**, paste the candidate ids from
+   step 2 into `/admin` → *Eval export* → **Mark exported**.
+
+> **Do step 4 last, and only with the ids from step 2.** The console reads
+> `where status = 'promoted'`, so a flipped candidate is never offered again. Marking
+> before the PR merges (or marking *everything* pending, which is why the field takes
+> explicit ids rather than a "mark all" button) strands those cases: they leave the
+> queue and exist in no dataset. Re-running step 2 is always safe — the merge dedupes
+> on the stable case id — so when in doubt, re-run the merge, not the flip.
+
+The `PROMOTE_DATABASE_URL` mode of the same script (no `--from-file`) does all of
+this in one shot against the DB directly. It is only usable from somewhere that can
+actually reach Postgres, which production is not.
+
+Marking exported needs `update (status, exported_at)` on `eval_candidate` for
+`admin_ro` — granted by `20260828000000_admin_ro_eval_export.sql`. The grant is
+column-level on purpose: a leaked `SUPABASE_ADMIN_KEY` still cannot rewrite a
+candidate's snapshot, band, or tags, so it cannot forge what lands in the dataset.
+
 ---
 
 ## 7. Known operational gotchas

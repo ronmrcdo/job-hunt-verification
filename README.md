@@ -309,6 +309,9 @@ Gated metrics (spec §10): **band within expected ceiling** per case, **false-po
 ~zero** (the product-killing metric — legit postings must never be flagged HIGH/CRITICAL),
 **citation-drop count ~zero**, and **cost/latency within budget**.
 
+**Adding or changing eval cases** — the case schema, the tags that drive the gates, and
+the user-feedback → dataset pipeline: [`apps/api/eval/README.md`](apps/api/eval/README.md).
+
 ---
 
 ## Versions & roadmap

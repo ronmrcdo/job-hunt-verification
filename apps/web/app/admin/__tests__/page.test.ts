@@ -36,7 +36,17 @@ function fakeClient() {
         };
       }
       if (table === "eval_candidate") {
-        return { select: () => Promise.resolve({ data: [{ status: "promoted" }, { status: "exported" }], error: null }) };
+        // Two different reads hit this table: the Overview's status tally
+        // (awaited straight off .select) and the export queue's
+        // .select(...).eq("status","promoted"). The stand-in is thenable AND
+        // chainable so one fake serves both.
+        return {
+          select: () => ({
+            then: (res: (v: unknown) => unknown) =>
+              res({ data: [{ status: "promoted" }, { status: "exported" }], error: null }),
+            eq: () => Promise.resolve({ data: [{ id: "11111111-1111-1111-1111-111111111111" }], error: null }),
+          }),
+        };
       }
       return {};
     },
@@ -54,6 +64,12 @@ describe("loadConsole", () => {
     expect(triage.ok).toBe(true);
   });
 
+  it("loads the candidates awaiting export alongside the triage queue", async () => {
+    const { pending } = await loadConsole(fakeClient());
+    expect(pending.ok).toBe(true);
+    expect(pending.ok === true && pending.candidates).toHaveLength(1);
+  });
+
   it("coalesces failed reads to zero and derives no verdicts from a failed triage read", async () => {
     const broken = {
       from(table: string) {
@@ -64,12 +80,13 @@ describe("loadConsole", () => {
       },
       rpc: () => Promise.resolve({ data: null, error: { message: "boom" } }),
     } as never;
-    const { stats, triage } = await loadConsole(broken);
+    const { stats, triage, pending } = await loadConsole(broken);
     expect(stats.registeredUsers).toBe(0);
     expect(stats.investigationsTotal).toBe(0);
     expect(stats.feedback.total).toBe(0);
     expect(stats.candidates.total).toBe(0);
     expect(triage.ok).toBe(false);
+    expect(pending.ok).toBe(false); // a failed read is never an empty export queue
   });
 });
 

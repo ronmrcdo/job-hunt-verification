@@ -135,3 +135,89 @@ def test_reconcile_fresh_candidate_is_appended_and_exported():
     assert len(new_dataset) == 1
     assert new_dataset[0]["id"] == candidate_to_case(cand)["id"]
     assert export_ids == [CAND_A]
+
+
+# ---------------------------------------------------------------------------
+# --from-file mode: the production DB is on an internal network with no route
+# from an operator laptop, so candidates cross the boundary as a JSON file
+# downloaded from /admin rather than over a Postgres connection.
+# ---------------------------------------------------------------------------
+
+
+def test_load_candidates_accepts_the_admin_download_envelope():
+    from scripts.promote_feedback import load_candidates
+
+    payload = {"generated_at": "2026-08-28T00:00:00Z", "candidates": [_candidate()]}
+    assert load_candidates(json.dumps(payload)) == [_candidate()]
+
+
+def test_load_candidates_accepts_a_bare_list():
+    from scripts.promote_feedback import load_candidates
+
+    assert load_candidates(json.dumps([_candidate()])) == [_candidate()]
+
+
+def test_load_candidates_rejects_a_payload_that_is_not_candidates():
+    from scripts.promote_feedback import load_candidates
+
+    try:
+        load_candidates(json.dumps({"rows": []}))
+    except ValueError as e:
+        assert "candidates" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_merge_from_file_appends_cases_and_reports_ids_to_mark_exported(tmp_path):
+    from scripts.promote_feedback import merge_from_file
+
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text(json.dumps([]))
+    src = tmp_path / "candidates.json"
+    src.write_text(json.dumps({"candidates": [_candidate(), _candidate(inv="33334444bbbb", cand_id=CAND_B)]}))
+
+    added, export_ids = merge_from_file(src, dataset)
+
+    assert added == ["feedback_11112222_111111111111", "feedback_33334444_222222222222"]
+    assert export_ids == [CAND_A, CAND_B]
+    assert [c["id"] for c in json.loads(dataset.read_text())] == added
+
+
+def test_merge_from_file_is_idempotent_when_run_twice(tmp_path):
+    from scripts.promote_feedback import merge_from_file
+
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text(json.dumps([]))
+    src = tmp_path / "candidates.json"
+    src.write_text(json.dumps({"candidates": [_candidate()]}))
+
+    merge_from_file(src, dataset)
+    added, export_ids = merge_from_file(src, dataset)
+
+    assert added == []  # nothing new the second time
+    assert export_ids == [CAND_A]  # still safe to mark exported
+    assert len(json.loads(dataset.read_text())) == 1
+
+
+def test_merge_from_file_never_touches_a_database(tmp_path, monkeypatch):
+    # The whole point of this mode: no psycopg, no connection, no PROMOTE_DATABASE_URL.
+    import builtins
+
+    from scripts.promote_feedback import merge_from_file
+
+    real_import = builtins.__import__
+
+    def guard(name, *a, **kw):
+        if name == "psycopg":
+            raise AssertionError("merge_from_file must not import psycopg")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", guard)
+    monkeypatch.delenv("PROMOTE_DATABASE_URL", raising=False)
+
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text(json.dumps([]))
+    src = tmp_path / "candidates.json"
+    src.write_text(json.dumps({"candidates": [_candidate()]}))
+    added, _ = merge_from_file(src, dataset)
+    assert added == ["feedback_11112222_111111111111"]
