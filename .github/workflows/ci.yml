@@ -68,7 +68,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10 }
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
+        with: { node-version: 22, cache: pnpm }
       - run: pnpm install
       - run: cd apps/web && pnpm vitest run
 
@@ -103,7 +103,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with: { version: 10 }
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
+        with: { node-version: 22, cache: pnpm }
       - run: pnpm install && cd apps/api && uv sync && cd ../..
       - run: pnpm gen:types
       - run: git diff --exit-code -- packages/api-types/index.ts || (echo "api-types is stale — run 'pnpm gen:types' and commit the result"; exit 1)
