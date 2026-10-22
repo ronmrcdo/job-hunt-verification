@@ -14,7 +14,7 @@
 # With no --target, the last stage (`prod`) wins, so bare `docker build` still
 # yields the shippable image.
 
-FROM node:22-slim AS base
+FROM node:22.23.4-slim AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
